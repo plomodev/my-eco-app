@@ -397,13 +397,24 @@ public partial class Form1 : Form
             Text = "Dès qu'un jeu démarre, toutes les autres applications passent en Mode Éco.",
             Font = new Font("Segoe UI Variable Text", 8.8f),
             ForeColor = Color.FromArgb(180, 170, 215),
-            AutoSize = true,
+            Size = new Size(590, 20),
+            AutoEllipsis = true,
             Location = new Point(17, 36),
             BackColor = Color.Transparent
         };
 
+        var btnOptimizationAdvisor = CreateVioletActionButton(
+            "🛠 Optimisations",
+            Color.FromArgb(109, 40, 217),
+            new Point(625, 15),
+            140,
+            (s, e) => OpenOptimizationAdvisor());
+        btnOptimizationAdvisor.Size = new Size(140, 36);
+        btnOptimizationAdvisor.Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold);
+
         pnlStatusBanner.Controls.Add(lblStatusHeader);
         pnlStatusBanner.Controls.Add(lblStatusSubtitle);
+        pnlStatusBanner.Controls.Add(btnOptimizationAdvisor);
         this.Controls.Add(pnlStatusBanner);
 
         // ══════════════════════════════════════════════════════════
@@ -836,6 +847,7 @@ public partial class Form1 : Form
     {
         trayMenu = new ContextMenuStrip();
         trayMenu.Items.Add("🟣 Afficher GameEcoBot", null, (s, e) => ShowAndRestore());
+        trayMenu.Items.Add("🛠 Assistant d'optimisation", null, (s, e) => OpenOptimizationAdvisor());
         trayMenu.Items.Add("🔍 Recherche de jeu", null, async (s, e) => await intelligenceService.BoostIntelligenceAsync());
         trayMenu.Items.Add("🎯 Basculer Angle Snapping (F8)", null, (s, e) => ToggleAngleSnapping());
         trayMenu.Items.Add("🟣 Activer/Désactiver Mode Éco", null, (s, e) => BtnToggleEco_Click(s, e));
@@ -851,6 +863,12 @@ public partial class Form1 : Form
             Visible = true
         };
         trayIcon.DoubleClick += (s, e) => ShowAndRestore();
+    }
+
+    private void OpenOptimizationAdvisor()
+    {
+        using var advisor = new OptimizationAdvisorForm();
+        advisor.ShowDialog(this);
     }
 
     #region Angle Snapping 100% Ultra-Agressif
