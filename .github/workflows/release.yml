@@ -1,0 +1,47 @@
+name: Build and publish Windows executable
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish-windows:
+    name: Build Windows x64 release
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish self-contained executable
+        shell: pwsh
+        run: >
+          dotnet publish GameEcoBot.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          --output publish/win-x64
+
+      - name: Create release and attach executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$env:GITHUB_REF_NAME"
+          "publish/win-x64/GameEcoBot.exe"
+          --title "GameEcoBot — Téléchargement Windows x64"
+          --notes "Exécutable autonome Windows x64. Le dépôt est privé : le téléchargement est réservé aux personnes ayant accès au dépôt."
+          --verify-tag
