@@ -812,64 +812,17 @@ public partial class Form1 : Form
         pnlSidebar.Controls.Add(brandMark);
         pnlSidebar.Controls.Add(lblBrand);
 
-        Label lblNavigation = new Label
+        Label lblTools = new Label
         {
-            Text = "NAVIGATION",
+            Text = "OUTILS",
             Location = new Point(20, 88),
             AutoSize = true,
             Font = new Font("Segoe UI Variable Text", 8f, FontStyle.Bold),
             ForeColor = Color.FromArgb(137, 122, 173),
             BackColor = Color.Transparent
         };
-        pnlSidebar.Controls.Add(lblNavigation);
-        var sidebarNavButtons = new List<ModernButton>();
-        void AddNavigationItem(string text, int y, Control target, bool isActive = false)
-        {
-            var navButton = new ModernButton
-            {
-                Text = text,
-                Location = new Point(12, y),
-                Size = new Size(sidebarWidth - 24, 38),
-                BorderRadius = 10,
-                HasBorder = false,
-                NormalColor = isActive ? Color.FromArgb(36, 27, 58) : Color.Transparent,
-                HoverColor = Color.FromArgb(31, 24, 50),
-                PressedColor = Color.FromArgb(47, 34, 75),
-                ForeColor = isActive ? Color.White : Color.FromArgb(181, 168, 211),
-                Font = new Font("Segoe UI Variable Text", 9.5f, isActive ? FontStyle.Bold : FontStyle.Regular)
-            };
-            sidebarNavButtons.Add(navButton);
-            navButton.Click += (s, e) =>
-            {
-                pnlMainContent.ScrollControlIntoView(target);
-                foreach (var item in sidebarNavButtons)
-                {
-                    bool selected = item == navButton;
-                    item.NormalColor = selected ? Color.FromArgb(36, 27, 58) : Color.Transparent;
-                    item.ForeColor = selected ? Color.White : Color.FromArgb(181, 168, 211);
-                    item.Font = new Font("Segoe UI Variable Text", 9.5f, selected ? FontStyle.Bold : FontStyle.Regular);
-                    item.Invalidate();
-                }
-            };
-            pnlSidebar.Controls.Add(navButton);
-        }
-        AddNavigationItem("Vue d’ensemble", 120, lblPageTitle, true);
-        AddNavigationItem("Performances", 166, pnlGraphContainer);
-        AddNavigationItem("Commandes", 212, pnlActionsRow);
-        AddNavigationItem("Réglages", 258, pnlAutoSettings);
-        AddNavigationItem("Journal", 304, pnlLogCard);
-
-        Label lblTools = new Label
-        {
-            Text = "OUTILS",
-            Location = new Point(20, 366),
-            AutoSize = true,
-            Font = new Font("Segoe UI Variable Text", 8f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(137, 122, 173),
-            BackColor = Color.Transparent
-        };
         pnlSidebar.Controls.Add(lblTools);
-        var btnSidebarAdvisor = CreateVioletActionButton("Optimisations IA", Color.FromArgb(109, 40, 217), new Point(16, 390), sidebarWidth - 32, (s, e) => OpenOptimizationAdvisor());
+        var btnSidebarAdvisor = CreateVioletActionButton("Optimisations IA", Color.FromArgb(109, 40, 217), new Point(16, 112), sidebarWidth - 32, (s, e) => OpenOptimizationAdvisor());
         btnSidebarAdvisor.Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold);
         pnlSidebar.Controls.Add(btnSidebarAdvisor);
 
