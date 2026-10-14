@@ -472,7 +472,8 @@ public partial class Form1 : Form
 
         hardwareGraph = new HardwareGraphControl
         {
-            Title = "Ressources système"
+            Title = "Ressources système",
+            Dock = DockStyle.Fill
         };
         hardwareGraph.MetricsUpdated += (s, e) => UpdateHardwareMetrics();
 
