@@ -43,6 +43,9 @@ public sealed class HardwareGraphControl : UserControl
         }
     }
 
+    public float? CpuUsage => cpuUsage;
+    public float RamUsage => ramUsage;
+    public event EventHandler? MetricsUpdated;
     public HardwareGraphControl()
     {
         SetStyle(
@@ -86,6 +89,7 @@ public sealed class HardwareGraphControl : UserControl
         Enqueue(ramSamples, ramUsage);
         Enqueue(appSamples, appCount);
         Invalidate();
+        MetricsUpdated?.Invoke(this, EventArgs.Empty);
     }
 
     private static void Enqueue(Queue<float> samples, float value)
