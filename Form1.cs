@@ -19,6 +19,7 @@ public partial class Form1 : Form
     private System.Windows.Forms.Timer monitorTimer;
     private bool isGameActive = false;
     private bool isManualEcoActive = false;
+    private bool isDetectionRunning = false;
     private string activeGameName = "";
     private HashSet<int> currentlyThrottledPids = new();
 
@@ -68,7 +69,7 @@ public partial class Form1 : Form
     private ModernButton btnGraphApps;
     private ModernButton btnGraphGpu;
 
-    // Mode Boost IA Ultra-Réactif (+300%) — toujours actif, pas de toggle UI
+    // Vérification rapide du jeu affiché au premier plan.
     private System.Windows.Forms.Timer fastDetectionTimer;
 
     // Media control buttons style Spotify / Windows 11
@@ -157,7 +158,7 @@ public partial class Form1 : Form
         Log("⚡ Réseau NoDelay + Boost IA activés en permanence.");
     }
 
-    private void FastDetectionTimer_Tick(object? sender, EventArgs e)
+    private async void FastDetectionTimer_Tick(object? sender, EventArgs e)
     {
         // Boost IA Ultra-Réactif toujours actif (pas de toggle)
         if (chkAutoDetect != null && chkAutoDetect.Checked)
@@ -176,7 +177,7 @@ public partial class Form1 : Form
                         {
                             if (intelligenceService.KnownGames.Contains(pName) && (!isGameActive || activeGameName != pName))
                             {
-                                CheckActiveGameAndApplyEco();
+                                await CheckActiveGameAndApplyEcoAsync();
                             }
                         }
                     }
@@ -195,7 +196,6 @@ public partial class Form1 : Form
         if (startMinimized)
         {
             this.Hide();
-            trayIcon.ShowBalloonTip(1500, "GameEcoBot", "Démarré en tâche de fond pour surveiller Valorant.", ToolTipIcon.Info);
         }
         else
         {
@@ -362,7 +362,6 @@ public partial class Form1 : Form
         btnClose.Click += (s, e) =>
         {
             this.Hide();
-            trayIcon.ShowBalloonTip(1500, "GameEcoBot", "Actif en arrière-plan.", ToolTipIcon.Info);
         };
 
         pnlHeader.Controls.Add(btnMinimize);
@@ -902,7 +901,6 @@ public partial class Form1 : Form
             lblAngleStatus.Text = "100% ULTRA ACTIF";
             lblAngleStatus.ForeColor = Color.FromArgb(192, 132, 252);
             Log("🎯 ANGLE SNAPPING 100% ULTRA-AGRESSIF ACTIVÉ — Axe parasite totalement supprimé !");
-            trayIcon.ShowBalloonTip(1500, "Angle Snapping", "100% ULTRA-AGRESSIF activé !", ToolTipIcon.Info);
         }
         else
         {
@@ -1086,17 +1084,19 @@ public partial class Form1 : Form
         {
             e.Cancel = true;
             this.Hide();
-            trayIcon.ShowBalloonTip(1500, "GameEcoBot", "Actif en arrière-plan avec son thème violet.", ToolTipIcon.Info);
         }
     }
 
-    private void MonitorTimer_Tick(object? sender, EventArgs e)
+    private async void MonitorTimer_Tick(object? sender, EventArgs e)
     {
-        CheckActiveGameAndApplyEco();
+        await CheckActiveGameAndApplyEcoAsync();
     }
 
-    private void CheckActiveGameAndApplyEco()
+    private async Task CheckActiveGameAndApplyEcoAsync()
     {
+        if (isDetectionRunning) return;
+        isDetectionRunning = true;
+
         try
         {
             // Mettre à jour l'audio en direct (ce que j'entends)
@@ -1130,7 +1130,7 @@ public partial class Form1 : Form
                             }
                             else
                             {
-                                if (intelligenceService.IsGameAsync(fgProc).GetAwaiter().GetResult())
+                                if (await Task.Run(() => intelligenceService.IsGameAsync(fgProc)))
                                 {
                                     detectedGame = fgProc;
                                 }
@@ -1183,14 +1183,12 @@ public partial class Form1 : Form
                     // 3. Bascule Automatique vers Mode d'Alimentation Ultime (+300% de réactivité CPU)
                     NativeMethods.SetUltimateGamingPowerPlan(true);
 
-                    Log($"🔥 BOOST IA +300% : {activeGameName} détecté ! Priorité Haute, Timer 1ms & Mode Gaming Ultime activés.");
+                    Log($"🎮 Jeu détecté : {activeGameName}. Priorité haute, timer précis et mode d’alimentation jeu activés.");
 
                     pnlStatusBanner.BackColor = Color.FromArgb(45, 20, 65);
                     lblStatusHeader.Text = $"🔥 MODE JEU ACTIF • {activeGameName.ToUpper()}";
                     lblStatusHeader.ForeColor = Color.FromArgb(216, 180, 254);
-                    lblStatusSubtitle.Text = "Toutes les applications superflues sont passées en Mode Éco & RAM purgée.";
-
-                    trayIcon.ShowBalloonTip(2000, "GameEcoBot", $"Mode Jeu IA +300% activé pour {activeGameName} !", ToolTipIcon.Info);
+                    lblStatusSubtitle.Text = "Mode Éco appliqué aux applications non protégées.";
 
                     ApplyEcoToAllBackgroundApps(processes, detectedGame.Id);
                 }
@@ -1226,6 +1224,10 @@ public partial class Form1 : Form
             }
         }
         catch { }
+        finally
+        {
+            isDetectionRunning = false;
+        }
     }
 
     private void ApplyEcoToAllBackgroundApps(Process[] allProcesses, int gamePid)
@@ -1315,7 +1317,6 @@ public partial class Form1 : Form
         }
         GC.Collect();
         Log($"🧹 Cache mémoire vidé pour {count} processus.");
-        MessageBox.Show($"La mémoire vive a été vidée pour {count} processus !\nLa RAM est libre pour le jeu.", "Nettoyage RAM", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
 

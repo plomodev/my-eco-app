@@ -120,25 +120,42 @@ public class InternetIntelligenceService
 
         bool isGame = false;
         string searchName = CleanProcessName(processName);
+        bool hasReliableAnswer = false;
 
         try
         {
             // 1. Steam Store Search (rapide, fiable)
-            isGame = await CheckSteamStoreAsync(searchName).ConfigureAwait(false);
+            bool? steamResult = await CheckSteamStoreAsync(searchName).ConfigureAwait(false);
+            if (steamResult == true)
+            {
+                isGame = true;
+                hasReliableAnswer = true;
+            }
 
             // 2. Si pas trouvé sur Steam, tenter RAWG
             if (!isGame)
-                isGame = await CheckRawgAsync(searchName).ConfigureAwait(false);
+            {
+                bool? rawgResult = await CheckRawgAsync(searchName).ConfigureAwait(false);
+                if (rawgResult.HasValue)
+                {
+                    hasReliableAnswer = true;
+                    isGame = rawgResult.Value;
+                }
+                if (steamResult.HasValue) hasReliableAnswer = true;
+            }
         }
         catch (Exception ex)
         {
             OnLog?.Invoke($"⚠️ [Internet] Vérif en ligne de '{processName}' échouée : {ex.Message}");
         }
 
-        // Mettre en cache le résultat
-        await cacheSem.WaitAsync().ConfigureAwait(false);
-        try { onlineCheckCache[processName] = isGame; }
-        finally { cacheSem.Release(); }
+        // Ne pas transformer une panne réseau/API en résultat négatif permanent.
+        if (hasReliableAnswer)
+        {
+            await cacheSem.WaitAsync().ConfigureAwait(false);
+            try { onlineCheckCache[processName] = isGame; }
+            finally { cacheSem.Release(); }
+        }
 
         if (isGame)
         {
@@ -149,40 +166,56 @@ public class InternetIntelligenceService
         return isGame;
     }
 
-    private async Task<bool> CheckSteamStoreAsync(string name)
+    private async Task<bool?> CheckSteamStoreAsync(string name)
     {
         try
         {
             string url = string.Format(SteamSearchUrl, Uri.EscapeDataString(name));
-            string json = await http.GetStringAsync(url).ConfigureAwait(false);
+            using var response = await http.GetAsync(url).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+
+            string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("items", out var items)) return false;
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                return null;
             foreach (var item in items.EnumerateArray())
             {
                 string itemName = item.TryGetProperty("name", out var np) ? np.GetString() ?? "" : "";
                 if (FuzzyMatch(name, itemName)) return true;
             }
+            return false;
         }
-        catch { /* Steam peut être bloqué -> pas grave */ }
-        return false;
+        catch (HttpRequestException) { return null; }
+        catch (OperationCanceledException) { return null; }
+        catch (JsonException) { return null; }
     }
 
-    private async Task<bool> CheckRawgAsync(string name)
+    private async Task<bool?> CheckRawgAsync(string name)
     {
         try
         {
-            string url = $"{RawgBase}/games?search={Uri.EscapeDataString(name)}&page_size=5";
-            string json = await http.GetStringAsync(url).ConfigureAwait(false);
+            string? apiKey = Environment.GetEnvironmentVariable("RAWG_API_KEY");
+            string keyParameter = string.IsNullOrWhiteSpace(apiKey)
+                ? ""
+                : $"&key={Uri.EscapeDataString(apiKey)}";
+            string url = $"{RawgBase}/games?search={Uri.EscapeDataString(name)}&page_size=5{keyParameter}";
+            using var response = await http.GetAsync(url).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+
+            string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("results", out var results)) return false;
+            if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+                return null;
             foreach (var game in results.EnumerateArray())
             {
                 string gameName = game.TryGetProperty("name", out var np) ? np.GetString() ?? "" : "";
                 if (FuzzyMatch(name, gameName)) return true;
             }
+            return false;
         }
-        catch { /* RAWG peut échouer -> pas grave */ }
-        return false;
+        catch (HttpRequestException) { return null; }
+        catch (OperationCanceledException) { return null; }
+        catch (JsonException) { return null; }
     }
 
     /// <summary>
@@ -193,32 +226,83 @@ public class InternetIntelligenceService
     {
         string[] suffixes =
         {
-            "-Win64-Shipping", "-Win32-Shipping", "_Win64", "_Win32",
-            "_x64", "_x86", "_BE", "_EAC", "_DX11", "_DX12", "_Vulkan",
-            "-shipping", "-game", "-launcher", "_beta", "-beta"
+            "_EAC_EOS", "-Win64-Shipping", "-Win32-Shipping", "_Win64-Shipping", "_Win32-Shipping",
+            "_Win64", "_Win32", "_x64", "_x86", "_BE", "_EAC", "_EOS", "_DX11", "_DX12", "_Vulkan",
+            "-shipping", "_shipping", "-game", "_game", "-launcher", "_launcher", "-client", "_client",
+            "_beta", "-beta"
         };
-        string name = raw;
-        foreach (var s in suffixes)
-            if (name.EndsWith(s, StringComparison.OrdinalIgnoreCase))
-                name = name[..^s.Length];
+        string name = raw.Trim();
+        bool removedSuffix;
+        do
+        {
+            removedSuffix = false;
+            foreach (var suffix in suffixes)
+            {
+                if (!name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
+                name = name[..^suffix.Length];
+                removedSuffix = true;
+                break;
+            }
+        } while (removedSuffix && name.Length > 0);
+
         return name.Replace('-', ' ').Replace('_', ' ').Trim();
     }
 
     /// <summary>
-    /// Correspondance floue : le nom cherché doit être contenu dans le résultat
-    /// ou vice-versa (tolérance casse + mots).
+    /// Correspondance prudente : égalité normalisée ou petite faute de frappe.
+    /// Les sous-chaînes seules ne suffisent pas à identifier un jeu.
     /// </summary>
     private static bool FuzzyMatch(string search, string result)
     {
         if (string.IsNullOrWhiteSpace(search) || string.IsNullOrWhiteSpace(result)) return false;
-        string s = search.ToLowerInvariant().Trim();
-        string r = result.ToLowerInvariant().Trim();
-        if (r.Contains(s) || s.Contains(r)) return true;
-        var wordsS = s.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var wordsR = r.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (wordsS.Length == 0) return false;
-        int matches = wordsS.Count(w => w.Length > 2 && wordsR.Any(wr => wr.Contains(w)));
-        return matches >= Math.Max(1, (int)(wordsS.Length * 0.6));
+        string s = NormalizeForMatch(search);
+        string r = NormalizeForMatch(result);
+        if (s.Length < 4 || r.Length < 4) return false;
+
+        string[] genericNames = { "game", "games", "client", "launcher", "online", "edition", "demo", "setup", "service", "helper" };
+        if (genericNames.Contains(s, StringComparer.OrdinalIgnoreCase)) return false;
+        if (string.Equals(s, r, StringComparison.Ordinal)) return true;
+
+        int minLength = Math.Min(s.Length, r.Length);
+        int allowedDistance = minLength >= 10 ? 2 : minLength >= 6 ? 1 : 0;
+        return BoundedLevenshteinDistance(s, r, allowedDistance) <= allowedDistance;
+    }
+
+    private static string NormalizeForMatch(string value)
+    {
+        string cleaned = CleanProcessName(value);
+        return new string(cleaned
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
+    }
+
+    private static int BoundedLevenshteinDistance(string left, string right, int maxDistance)
+    {
+        if (Math.Abs(left.Length - right.Length) > maxDistance) return maxDistance + 1;
+
+        int[] previous = Enumerable.Range(0, right.Length + 1).ToArray();
+        int[] current = new int[right.Length + 1];
+
+        for (int i = 1; i <= left.Length; i++)
+        {
+            current[0] = i;
+            int rowMinimum = current[0];
+
+            for (int j = 1; j <= right.Length; j++)
+            {
+                int substitutionCost = left[i - 1] == right[j - 1] ? 0 : 1;
+                current[j] = Math.Min(
+                    Math.Min(current[j - 1] + 1, previous[j] + 1),
+                    previous[j - 1] + substitutionCost);
+                rowMinimum = Math.Min(rowMinimum, current[j]);
+            }
+
+            if (rowMinimum > maxDistance) return maxDistance + 1;
+            (previous, current) = (current, previous);
+        }
+
+        return previous[right.Length];
     }
 
     /// <summary>

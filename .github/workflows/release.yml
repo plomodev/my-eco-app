@@ -42,6 +42,6 @@ jobs:
         run: >
           gh release create "$env:GITHUB_REF_NAME"
           "publish/win-x64/GameEcoBot.exe"
-          --title "GameEcoBot — Téléchargement Windows x64"
+          --title "GameEcoBot $env:GITHUB_REF_NAME — Téléchargement Windows x64"
           --notes "Exécutable autonome Windows x64. Le dépôt est privé : le téléchargement est réservé aux personnes ayant accès au dépôt."
           --verify-tag

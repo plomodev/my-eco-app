@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,14 +13,33 @@ using Microsoft.Win32;
 
 namespace GameEcoBot;
 
+public sealed class ConcurrentSet<T> : IEnumerable<T> where T : notnull
+{
+    private readonly ConcurrentDictionary<T, byte> items;
+
+    public ConcurrentSet(IEqualityComparer<T>? comparer = null)
+    {
+        items = new ConcurrentDictionary<T, byte>(comparer ?? EqualityComparer<T>.Default);
+    }
+
+    public int Count => items.Count;
+    public bool Add(T item) => items.TryAdd(item, 0);
+    public bool Contains(T item) => items.ContainsKey(item);
+
+    public IEnumerator<T> GetEnumerator() => items.Keys.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
 public class GameIntelligenceService
 {
     private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2.0) };
     private readonly string cacheFilePath;
     private readonly ConcurrentDictionary<string, bool> detectedCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, DateTime> negativeCheckCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan NegativeCheckCooldown = TimeSpan.FromMinutes(5);
 
     // Jeux réellement installés et reconnus sur le PC
-    public HashSet<string> KnownGames { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
+    public ConcurrentSet<string> KnownGames { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
     public event Action<string>? OnLog;
     public event Action<int>? OnGamesUpdated;
 
@@ -203,18 +223,14 @@ public class GameIntelligenceService
                     bool needResave = false;
                     foreach (var kvp in dict)
                     {
-                        if (IsExcluded(kvp.Key))
+                        if (IsExcluded(kvp.Key) || !kvp.Value)
                         {
-                            detectedCache[kvp.Key] = false;
                             needResave = true;
                             continue;
                         }
 
-                        detectedCache[kvp.Key] = kvp.Value;
-                        if (kvp.Value)
-                        {
-                            KnownGames.Add(kvp.Key);
-                        }
+                        detectedCache[kvp.Key] = true;
+                        KnownGames.Add(kvp.Key);
                     }
 
                     if (needResave)
@@ -749,11 +765,18 @@ public class GameIntelligenceService
             return false;
         }
 
-        // Cache ou Base Maîtresse
-        if (detectedCache.TryGetValue(name, out bool isGame))
+        // Les résultats positifs sont persistants; les négatifs sont temporaires
+        // afin qu'une mise à jour des sources en ligne puisse corriger une erreur.
+        if (detectedCache.TryGetValue(name, out bool isGame) && isGame &&
+            (MasterGameDatabase.Contains(name) || KnownGames.Contains(name)))
         {
-            if (!isGame) return false;
-            if (MasterGameDatabase.Contains(name) || KnownGames.Contains(name)) return true;
+            return true;
+        }
+
+        if (negativeCheckCache.TryGetValue(name, out DateTime retryAfter))
+        {
+            if (retryAfter > DateTime.UtcNow) return false;
+            negativeCheckCache.TryRemove(name, out _);
         }
 
         if (MasterGameDatabase.Contains(name) || KnownGames.Contains(name))
@@ -790,16 +813,12 @@ public class GameIntelligenceService
             return false;
         }
 
-        // HEURISTIQUE 1 : Détection Plein Écran (Exclusive / Borderless Fullscreen)
+        // Le plein écran seul ne suffit pas: un navigateur ou un lecteur vidéo
+        // peut aussi occuper tout l'écran.
+        bool isFullscreen = false;
         try
         {
-            if (NativeMethods.IsForegroundWindowFullscreen(process.Id))
-            {
-                RegisterGame(name);
-                SaveCache();
-                OnLog?.Invoke($"🎯 Détection IA Plein Écran : '{name}' ({windowTitle}) identifié comme jeu actif !");
-                return true;
-            }
+            isFullscreen = NativeMethods.IsForegroundWindowFullscreen(process.Id);
         }
         catch { }
 
@@ -812,7 +831,7 @@ public class GameIntelligenceService
             string? path = process.MainModule?.FileName?.ToLower();
 
             // Mots-clés moteurs ou jeux
-            string[] gameKeywords = { "game", "unreal engine", "unity player", "valve", "interactive", "riot games", "blizzard", "rockstar", "electronic arts", "godot" };
+            string[] gameKeywords = { "video game", "unreal engine", "unity player", "godot engine", "riot games", "blizzard entertainment", "rockstar games", "electronic arts" };
             string combinedMeta = $"{desc} {prod} {company}";
 
             if (gameKeywords.Any(k => combinedMeta.Contains(k)))
@@ -871,7 +890,7 @@ public class GameIntelligenceService
             }
 
             // Pour les DLLs DirectX/Vulkan génériques, valider si la fenêtre est en plein écran ou grand affichage 3D
-            if (hasGpuApi && NativeMethods.IsForegroundWindowFullscreen(process.Id))
+            if (hasGpuApi && isFullscreen)
             {
                 RegisterGame(name);
                 SaveCache();
@@ -885,16 +904,13 @@ public class GameIntelligenceService
         if (name.EndsWith("-Win64-Shipping", StringComparison.OrdinalIgnoreCase) ||
             name.EndsWith("_BE", StringComparison.OrdinalIgnoreCase) ||
             name.EndsWith("_EAC", StringComparison.OrdinalIgnoreCase) ||
-            name.EndsWith("_Vulkan", StringComparison.OrdinalIgnoreCase) ||
-            (name.Contains("Game", StringComparison.OrdinalIgnoreCase) && !name.Equals("GameBar", StringComparison.OrdinalIgnoreCase) && !name.Equals("GameEcoBot", StringComparison.OrdinalIgnoreCase)))
+            name.EndsWith("_Vulkan", StringComparison.OrdinalIgnoreCase))
         {
             RegisterGame(name);
             SaveCache();
             OnLog?.Invoke($"🎮 Détection IA Motif Exécutable ({name}) : Jeu reconnu.");
             return true;
         }
-
-        detectedCache[name] = false;
 
         // HEURISTIQUE 4 : Vérification en ligne (Steam Store + RAWG) en dernier recours
         // Uniquement si le processus a une fenêtre visible (évite les faux-positifs de services)
@@ -909,7 +925,7 @@ public class GameIntelligenceService
         }
         catch { }
 
-        SaveCache();
+        negativeCheckCache[name] = DateTime.UtcNow.Add(NegativeCheckCooldown);
         return false;
     }
 }
