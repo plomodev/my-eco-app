@@ -43,9 +43,7 @@ public partial class Form1 : Form
     private const int HOTKEY_ID_F8 = 9001;
 
     // Contrôles d'interface haute fidélité (Pixel par pixel)
-    private Label lblStatusHeader;
-    private Label lblStatusSubtitle;
-    private ModernCard pnlStatusBanner;
+    private Label lblStatusHeader;    private ModernCard pnlStatusBanner;
     private Label lblEcoCount;
     private Label lblActiveGame;
     private Label lblAngleStatus;
@@ -382,20 +380,10 @@ public partial class Form1 : Form
             Font = new Font("Segoe UI Variable Display", 12f, FontStyle.Bold),
             ForeColor = Color.FromArgb(192, 132, 252),
             AutoSize = true,
-            Location = new Point(16, 11),
+            Location = new Point(16, 22),
             BackColor = Color.Transparent
         };
 
-        lblStatusSubtitle = new Label
-        {
-            Text = "Dès qu'un jeu démarre, toutes les autres applications passent en Mode Éco.",
-            Font = new Font("Segoe UI Variable Text", 8.8f),
-            ForeColor = Color.FromArgb(180, 170, 215),
-            Size = new Size(590, 20),
-            AutoEllipsis = true,
-            Location = new Point(17, 36),
-            BackColor = Color.Transparent
-        };
 
         var btnOptimizationAdvisor = CreateVioletActionButton(
             "🛠 Optimisations",
@@ -407,7 +395,6 @@ public partial class Form1 : Form
         btnOptimizationAdvisor.Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold);
 
         pnlStatusBanner.Controls.Add(lblStatusHeader);
-        pnlStatusBanner.Controls.Add(lblStatusSubtitle);
         pnlStatusBanner.Controls.Add(btnOptimizationAdvisor);
         this.Controls.Add(pnlStatusBanner);
 
@@ -513,7 +500,6 @@ public partial class Form1 : Form
         chkAngleSnapping = new ModernToggleSwitch
         {
             Title = "🎯 Angle Snapping [F8]",
-            Subtitle = "Correction horizontale/verticale pour FPS",
             Checked = false,
             Location = new Point(12, 9),
             Size = new Size(320, 36)
@@ -585,7 +571,6 @@ public partial class Form1 : Form
         chkAutoDetect = new ModernToggleSwitch
         {
             Title = "🟣 Mode Éco Automatique",
-            Subtitle = "Brider les apps d'arrière-plan en jeu",
             Checked = true,
             Location = new Point(12, 6),
             Size = new Size(370, 34)
@@ -594,7 +579,6 @@ public partial class Form1 : Form
         chkMouseNoDelay = new ModernToggleSwitch
         {
             Title = "🟣 Souris No Delay (0ms)",
-            Subtitle = "Timer 1ms + Réponse 1:1 sans latence Windows",
             Checked = true,
             Location = new Point(395, 6),
             Size = new Size(370, 34)
@@ -610,7 +594,6 @@ public partial class Form1 : Form
         chkRunAtStartup = new ModernToggleSwitch
         {
             Title = "🚀 Démarrer avec Windows",
-            Subtitle = "Lancement automatique minimisé en tâche de fond",
             Checked = CheckStartupConfig(),
             Location = new Point(12, 42),
             Size = new Size(370, 34)
@@ -1154,7 +1137,6 @@ public partial class Form1 : Form
                     pnlStatusBanner.BackColor = Color.FromArgb(45, 20, 65);
                     lblStatusHeader.Text = $"🔥 MODE JEU ACTIF • {activeGameName.ToUpper()}";
                     lblStatusHeader.ForeColor = Color.FromArgb(216, 180, 254);
-                    lblStatusSubtitle.Text = "Mode Éco appliqué aux applications non protégées.";
 
                     ApplyEcoToAllBackgroundApps(processes, detectedGame.Id);
                 }
@@ -1180,7 +1162,6 @@ public partial class Form1 : Form
                         pnlStatusBanner.BackColor = Color.FromArgb(24, 18, 48);
                         lblStatusHeader.Text = "🟣 EN VEILLE • PRÊT POUR LE JEU";
                         lblStatusHeader.ForeColor = Color.FromArgb(192, 132, 252);
-                        lblStatusSubtitle.Text = "Dès qu'un jeu démarre, toutes les autres applications passent en Mode Éco.";
                     }
                 }
                 else if (isManualEcoActive)
@@ -1249,7 +1230,6 @@ public partial class Form1 : Form
             pnlStatusBanner.BackColor = Color.FromArgb(40, 20, 55);
             lblStatusHeader.Text = "🟣 MODE ÉCO MANUEL FORCÉ";
             lblStatusHeader.ForeColor = Color.FromArgb(216, 180, 254);
-            lblStatusSubtitle.Text = "Toutes les applications hors jeu sont bridées en Mode Éco.";
             Log("🟣 Mode Éco forcé manuellement.");
             ApplyEcoToAllBackgroundApps(Process.GetProcesses(), -1);
         }
@@ -1260,7 +1240,6 @@ public partial class Form1 : Form
             pnlStatusBanner.BackColor = Color.FromArgb(24, 18, 48);
             lblStatusHeader.Text = "🟣 EN VEILLE • PRÊT POUR LE JEU";
             lblStatusHeader.ForeColor = Color.FromArgb(192, 132, 252);
-            lblStatusSubtitle.Text = "Dès qu'un jeu démarre, toutes les autres applications passent en Mode Éco.";
             RestoreAllProcessesToNormal();
         }
     }
