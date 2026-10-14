@@ -43,10 +43,18 @@ public partial class Form1 : Form
     private const int HOTKEY_ID_F8 = 9001;
 
     // Contrôles d'interface haute fidélité (Pixel par pixel)
-    private Label lblStatusHeader;    private ModernCard pnlStatusBanner;
+    private Label lblStatusHeader;
+    private ModernCard pnlStatusBanner;
     private Label lblEcoCount;
     private Label lblActiveGame;
     private Label lblAngleStatus;
+    private Label lblCpuValue;
+    private Label lblRamValue;
+    private Label lblGpuValue;
+    private Panel pnlCpuProgressTrack;
+    private Panel pnlCpuProgressFill;
+    private Panel pnlRamProgressTrack;
+    private Panel pnlRamProgressFill;
     private RichTextBox rtbLogs;
     private bool isSnappingReentrant = false;
     private ModernToggleSwitch chkAutoDetect;
@@ -203,7 +211,8 @@ public partial class Form1 : Form
 
     private void BuildAllVioletUi()
     {
-        this.Size = new Size(820, 830);
+        this.Size = new Size(1280, 960);
+        this.MinimumSize = new Size(1050, 760);
         this.BackColor = Color.FromArgb(12, 10, 24);
         this.ForeColor = Color.White;
         this.Font = new Font("Segoe UI Variable Text", 9.5f, FontStyle.Regular);
@@ -211,13 +220,35 @@ public partial class Form1 : Form
         this.StartPosition = FormStartPosition.CenterScreen;
         this.ShowInTaskbar = true;
 
+        const int sidebarWidth = 220;
+        const int headerHeight = 64;
+        int contentWidth = this.ClientSize.Width - sidebarWidth;
+
+        Panel pnlSidebar = new Panel
+        {
+            Location = Point.Empty,
+            Size = new Size(sidebarWidth, this.ClientSize.Height),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left,
+            BackColor = Color.FromArgb(10, 8, 18)
+        };
+        Panel pnlMainContent = new Panel
+        {
+            Location = new Point(sidebarWidth, headerHeight),
+            Size = new Size(contentWidth, this.ClientSize.Height - headerHeight),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.FromArgb(12, 10, 24),
+            AutoScroll = true,
+            AutoScrollMinSize = new Size(0, 1080)
+        };
+
         // ══════════════════════════════════════════════════════════
-        // 1. HEADER BAR — Widget Musique Spotify & Contrôles Fenêtre
+        // 1. HEADER BAR — Widget Musique & Contrôles Fenêtre
         // ══════════════════════════════════════════════════════════
         Panel pnlHeader = new Panel
         {
-            Dock = DockStyle.Top,
-            Height = 58,
+            Location = new Point(sidebarWidth, 0),
+            Size = new Size(contentWidth, headerHeight),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BackColor = Color.FromArgb(10, 8, 18),
             Padding = new Padding(0)
         };
@@ -226,7 +257,7 @@ public partial class Form1 : Form
         // ── Widget musique style Spotify (identique à la photo de référence) ──
         Panel pnlSoundWidget = new Panel
         {
-            Location = new Point(12, 5),
+            Location = new Point(20, 7),
             Size = new Size(500, 48),
             BackColor = Color.Transparent,
         };
@@ -335,7 +366,8 @@ public partial class Form1 : Form
         {
             IconText = "─",
             Size = new Size(28, 28),
-            Location = new Point(744, 18),
+            Location = new Point(pnlHeader.ClientSize.Width - 108, 18),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
             NormalBg = Color.FromArgb(28, 22, 48),
             HoverBg = Color.FromArgb(52, 42, 82),
             NormalFg = Color.FromArgb(190, 180, 220),
@@ -343,11 +375,25 @@ public partial class Form1 : Form
         };
         btnMinimize.Click += (s, e) => this.WindowState = FormWindowState.Minimized;
 
+        var btnMaximize = new ModernCircleButton
+        {
+            IconText = "□",
+            Size = new Size(28, 28),
+            Location = new Point(pnlHeader.ClientSize.Width - 73, 18),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            NormalBg = Color.FromArgb(28, 22, 48),
+            HoverBg = Color.FromArgb(52, 42, 82),
+            NormalFg = Color.FromArgb(190, 180, 220),
+            HoverFg = Color.White
+        };
+        btnMaximize.Click += (s, e) => this.WindowState = this.WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+
         var btnClose = new ModernCircleButton
         {
             IconText = "✕",
             Size = new Size(28, 28),
-            Location = new Point(778, 18),
+            Location = new Point(pnlHeader.ClientSize.Width - 38, 18),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
             IsDestructive = true,
             NormalBg = Color.FromArgb(28, 22, 48),
             NormalFg = Color.FromArgb(190, 180, 220)
@@ -358,16 +404,38 @@ public partial class Form1 : Form
         };
 
         pnlHeader.Controls.Add(btnMinimize);
+        pnlHeader.Controls.Add(btnMaximize);
         pnlHeader.Controls.Add(btnClose);
-        this.Controls.Add(pnlHeader);
 
         // ══════════════════════════════════════════════════════════
-        // 2. Status Banner (Carte moderne arrondie avec liseré néon)
+        // 2. Status Banner
         // ══════════════════════════════════════════════════════════
+        Label lblPageEyebrow = new Label
+        {
+            Text = "GESTIONNAIRE DES TÂCHES",
+            Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(181, 168, 211),
+            Location = new Point(24, 16),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        Label lblPageTitle = new Label
+        {
+            Text = "Surveillance du PC",
+            Font = new Font("Segoe UI Variable Display", 21f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(245, 243, 255),
+            Location = new Point(24, 34),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        pnlMainContent.Controls.Add(lblPageEyebrow);
+        pnlMainContent.Controls.Add(lblPageTitle);
+
         pnlStatusBanner = new ModernCard
         {
-            Location = new Point(20, 76),
-            Size = new Size(780, 66),
+            Location = new Point(24, 84),
+            Size = new Size(contentWidth - 48, 64),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BorderRadius = 12,
             FillColor = Color.FromArgb(22, 17, 44),
             BorderColor = Color.FromArgb(60, 48, 105),
@@ -388,23 +456,60 @@ public partial class Form1 : Form
         var btnOptimizationAdvisor = CreateVioletActionButton(
             "🛠 Optimisations",
             Color.FromArgb(109, 40, 217),
-            new Point(625, 15),
+            new Point(contentWidth - 204, 14),
             140,
             (s, e) => OpenOptimizationAdvisor());
         btnOptimizationAdvisor.Size = new Size(140, 36);
+        btnOptimizationAdvisor.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         btnOptimizationAdvisor.Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold);
 
         pnlStatusBanner.Controls.Add(lblStatusHeader);
         pnlStatusBanner.Controls.Add(btnOptimizationAdvisor);
-        this.Controls.Add(pnlStatusBanner);
+        pnlMainContent.Controls.Add(pnlStatusBanner);
 
         // ══════════════════════════════════════════════════════════
-        // 3. Hardware Graph Container (Carte moderne)
+
+        hardwareGraph = new HardwareGraphControl
+        {
+            Title = "Ressources système"
+        };
+        hardwareGraph.MetricsUpdated += (s, e) => UpdateHardwareMetrics();
+
+        Panel pnlHardwareMetrics = new Panel
+        {
+            Location = new Point(24, 164),
+            Size = new Size(contentWidth - 48, 116),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+        ModernCard cpuCard = CreateResourceMetricCard("PROCESSEUR · CPU", "…", "EN DIRECT", Color.FromArgb(124, 58, 237), true, out lblCpuValue, out pnlCpuProgressTrack, out pnlCpuProgressFill);
+        ModernCard ramCard = CreateResourceMetricCard("MÉMOIRE · RAM", "…", "EN DIRECT", Color.FromArgb(168, 85, 247), true, out lblRamValue, out pnlRamProgressTrack, out pnlRamProgressFill);
+        ModernCard gpuCard = CreateResourceMetricCard("CARTE GRAPHIQUE · GPU", "N/D", "INDISPONIBLE", Color.FromArgb(192, 132, 252), false, out lblGpuValue, out _, out _);
+
+        void LayoutHardwareCards()
+        {
+            int gap = 16;
+            int cardWidth = (pnlHardwareMetrics.ClientSize.Width - gap * 2) / 3;
+            cpuCard.Location = new Point(0, 0);
+            ramCard.Location = new Point(cardWidth + gap, 0);
+            gpuCard.Location = new Point((cardWidth + gap) * 2, 0);
+            cpuCard.Size = ramCard.Size = gpuCard.Size = new Size(cardWidth, 116);
+        }
+        pnlHardwareMetrics.Resize += (s, e) => LayoutHardwareCards();
+        LayoutHardwareCards();
+        pnlHardwareMetrics.Controls.Add(cpuCard);
+        pnlHardwareMetrics.Controls.Add(ramCard);
+        pnlHardwareMetrics.Controls.Add(gpuCard);
+        pnlMainContent.Controls.Add(pnlHardwareMetrics);
+        UpdateHardwareMetrics();
+
+        // 3. Hardware Graph Container
         // ══════════════════════════════════════════════════════════
         ModernCard pnlGraphContainer = new ModernCard
         {
-            Location = new Point(20, 152),
-            Size = new Size(780, 220),
+            Location = new Point(24, 382),
+            Size = new Size(contentWidth - 48, 268),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BorderRadius = 12,
             FillColor = Color.FromArgb(14, 12, 28),
             BorderColor = Color.FromArgb(44, 34, 76),
@@ -414,8 +519,9 @@ public partial class Form1 : Form
         // Pills CPU / RAM / GPU / APPS
         Panel pnlPills = new Panel
         {
-            Location = new Point(460, 8),
+            Location = new Point(pnlGraphContainer.ClientSize.Width - 322, 8),
             Size = new Size(310, 34),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
             BackColor = Color.Transparent
         };
 
@@ -433,38 +539,52 @@ public partial class Form1 : Form
         pnlPills.Controls.Add(btnGraphRam);
         pnlPills.Controls.Add(btnGraphGpu);
         pnlPills.Controls.Add(btnGraphApps);
-        pnlGraphContainer.Controls.Add(pnlPills);
-
-        hardwareGraph = new HardwareGraphControl
-        {
-            Dock = DockStyle.Fill,
-            Title = "AMD Ryzen 5 5500"
-        };
         pnlGraphContainer.Controls.Add(hardwareGraph);
-        this.Controls.Add(pnlGraphContainer);
+        pnlGraphContainer.Controls.Add(pnlPills);
+        pnlPills.BringToFront();
+        pnlMainContent.Controls.Add(pnlGraphContainer);
 
-        // ══════════════════════════════════════════════════════════
-        // 4. Metric Cards Row (Cartes arrondies pixel par pixel)
-        // ══════════════════════════════════════════════════════════
-        int cardY = 382;
-        int cardW = 250;
-        int cardH = 68;
-
-        ModernCard pnlCard1 = CreateMetricCard("🟣 APPS EN MODE ÉCO", "0 apps", Color.FromArgb(192, 132, 252), new Point(20, cardY), cardW, cardH, out lblEcoCount);
-        ModernCard pnlCard2 = CreateMetricCard("🎮 JEU EN COURS", "En attente...", Color.FromArgb(168, 85, 247), new Point(285, cardY), cardW, cardH, out lblActiveGame);
-        ModernCard pnlCard3 = CreateMetricCard("🎯 ANGLE SNAPPING", "DÉSACTIVÉ", Color.FromArgb(216, 180, 254), new Point(550, cardY), cardW, cardH, out lblAngleStatus);
-
-        this.Controls.Add(pnlCard1);
-        this.Controls.Add(pnlCard2);
-        this.Controls.Add(pnlCard3);
+        Panel pnlSummaryRow = new Panel
+        {
+            Location = new Point(24, 294),
+            Size = new Size(contentWidth - 48, 72),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+        int summaryGap = 16;
+        int summaryCardWidth = (pnlSummaryRow.ClientSize.Width - summaryGap * 2) / 3;
+        ModernCard pnlCard1 = CreateMetricCard("APPS EN MODE ÉCO", "0 apps", Color.FromArgb(192, 132, 252), new Point(0, 0), summaryCardWidth, 72, out lblEcoCount);
+        ModernCard pnlCard2 = CreateMetricCard("JEU EN COURS", "En attente...", Color.FromArgb(168, 85, 247), new Point(summaryCardWidth + summaryGap, 0), summaryCardWidth, 72, out lblActiveGame);
+        ModernCard pnlCard3 = CreateMetricCard("ANGLE SNAPPING", "DÉSACTIVÉ", Color.FromArgb(216, 180, 254), new Point((summaryCardWidth + summaryGap) * 2, 0), summaryCardWidth, 72, out lblAngleStatus);
+        void LayoutSummaryCards()
+        {
+            summaryCardWidth = (pnlSummaryRow.ClientSize.Width - summaryGap * 2) / 3;
+            pnlCard1.Location = new Point(0, 0);
+            pnlCard2.Location = new Point(summaryCardWidth + summaryGap, 0);
+            pnlCard3.Location = new Point((summaryCardWidth + summaryGap) * 2, 0);
+            pnlCard1.Size = pnlCard2.Size = pnlCard3.Size = new Size(summaryCardWidth, 72);
+        }
+        pnlSummaryRow.Resize += (s, e) => LayoutSummaryCards();
+        LayoutSummaryCards();
+        pnlSummaryRow.Controls.Add(pnlCard1);
+        pnlSummaryRow.Controls.Add(pnlCard2);
+        pnlSummaryRow.Controls.Add(pnlCard3);
+        pnlMainContent.Controls.Add(pnlSummaryRow);
 
         // ══════════════════════════════════════════════════════════
         // 5. Action Buttons (Boutons modernes avec micro-interactions)
         // ══════════════════════════════════════════════════════════
-        int btnY = 460;
-        int actBtnW = 186;
+        Panel pnlActionsRow = new Panel
+        {
+            Location = new Point(24, 670),
+            Size = new Size(contentWidth - 48, 44),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+        int actionGap = 14;
+        int actBtnW = (pnlActionsRow.ClientSize.Width - actionGap * 3) / 4;
 
-        btnSearchGames = CreateVioletActionButton("🔍 Recherche de jeu", Color.FromArgb(109, 40, 217), new Point(20, btnY), actBtnW, async (s, e) =>
+        btnSearchGames = CreateVioletActionButton("🔍 Recherche de jeu", Color.FromArgb(109, 40, 217), new Point(0, 0), actBtnW, async (s, e) =>
         {
             btnSearchGames.Enabled = false;
             btnSearchGames.Text = "⏳ Scan IA...";
@@ -475,22 +595,35 @@ public partial class Form1 : Form
             btnSearchGames.Enabled = true;
         });
 
-        btnToggleEco = CreateVioletActionButton("🟣 Mode Éco", Color.FromArgb(124, 58, 237), new Point(218, btnY), actBtnW, BtnToggleEco_Click);
-        btnCleanRam = CreateVioletActionButton("🧹 Vider la RAM", Color.FromArgb(139, 92, 246), new Point(416, btnY), actBtnW, BtnCleanRam_Click);
-        btnToggleAngleSnapping = CreateVioletActionButton("🎯 Angle Snapping [F8]", Color.FromArgb(76, 29, 149), new Point(614, btnY), actBtnW, (s, e) => ToggleAngleSnapping());
+        btnToggleEco = CreateVioletActionButton("🟣 Mode Éco", Color.FromArgb(124, 58, 237), new Point(actBtnW + actionGap, 0), actBtnW, BtnToggleEco_Click);
+        btnCleanRam = CreateVioletActionButton("🧹 Vider la RAM", Color.FromArgb(139, 92, 246), new Point((actBtnW + actionGap) * 2, 0), actBtnW, BtnCleanRam_Click);
+        btnToggleAngleSnapping = CreateVioletActionButton("🎯 Angle Snapping [F8]", Color.FromArgb(76, 29, 149), new Point((actBtnW + actionGap) * 3, 0), actBtnW, (s, e) => ToggleAngleSnapping());
 
-        this.Controls.Add(btnSearchGames);
-        this.Controls.Add(btnToggleEco);
-        this.Controls.Add(btnCleanRam);
-        this.Controls.Add(btnToggleAngleSnapping);
+        void LayoutActionButtons()
+        {
+            actBtnW = (pnlActionsRow.ClientSize.Width - actionGap * 3) / 4;
+            btnSearchGames.Location = new Point(0, 0);
+            btnToggleEco.Location = new Point(actBtnW + actionGap, 0);
+            btnCleanRam.Location = new Point((actBtnW + actionGap) * 2, 0);
+            btnToggleAngleSnapping.Location = new Point((actBtnW + actionGap) * 3, 0);
+            btnSearchGames.Size = btnToggleEco.Size = btnCleanRam.Size = btnToggleAngleSnapping.Size = new Size(actBtnW, 42);
+        }
+        pnlActionsRow.Resize += (s, e) => LayoutActionButtons();
+        LayoutActionButtons();
+        pnlActionsRow.Controls.Add(btnSearchGames);
+        pnlActionsRow.Controls.Add(btnToggleEco);
+        pnlActionsRow.Controls.Add(btnCleanRam);
+        pnlActionsRow.Controls.Add(btnToggleAngleSnapping);
+        pnlMainContent.Controls.Add(pnlActionsRow);
 
         // ══════════════════════════════════════════════════════════
         // 6. Section Angle Snapping avec Curseur Moderne
         // ══════════════════════════════════════════════════════════
         ModernCard pnlSnappingSettings = new ModernCard
         {
-            Location = new Point(20, 510),
-            Size = new Size(780, 54),
+            Location = new Point(24, 728),
+            Size = new Size(contentWidth - 48, 62),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BorderRadius = 10,
             FillColor = Color.FromArgb(20, 16, 40),
             BorderColor = Color.FromArgb(52, 42, 90),
@@ -531,8 +664,9 @@ public partial class Form1 : Form
 
         tbAngleSnapping = new ModernSlider
         {
-            Location = new Point(470, 14),
-            Size = new Size(295, 26),
+            Location = new Point(470, 18),
+            Size = new Size(pnlSnappingSettings.ClientSize.Width - 490, 26),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             Minimum = 5,
             Maximum = 100,
             Value = 100
@@ -552,7 +686,7 @@ public partial class Form1 : Form
         pnlSnappingSettings.Controls.Add(lblSliderTitle);
         pnlSnappingSettings.Controls.Add(lblAnglePercentValue);
         pnlSnappingSettings.Controls.Add(tbAngleSnapping);
-        this.Controls.Add(pnlSnappingSettings);
+        pnlMainContent.Controls.Add(pnlSnappingSettings);
 
         // ══════════════════════════════════════════════════════════
         // 7. Automatisation & No Delay Souris (Interrupteurs simplifiés)
@@ -560,8 +694,9 @@ public partial class Form1 : Form
         // ══════════════════════════════════════════════════════════
         ModernCard pnlAutoSettings = new ModernCard
         {
-            Location = new Point(20, 566),
-            Size = new Size(780, 80),
+            Location = new Point(24, 806),
+            Size = new Size(contentWidth - 48, 96),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BorderRadius = 10,
             FillColor = Color.FromArgb(17, 14, 36),
             BorderColor = Color.FromArgb(46, 36, 80),
@@ -580,8 +715,9 @@ public partial class Form1 : Form
         {
             Title = "🟣 Souris No Delay (0ms)",
             Checked = true,
-            Location = new Point(395, 6),
-            Size = new Size(370, 34)
+            Location = new Point(480, 8),
+            Size = new Size(pnlAutoSettings.ClientSize.Width - 500, 34),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         chkMouseNoDelay.CheckedChanged += (s, e) =>
         {
@@ -595,23 +731,24 @@ public partial class Form1 : Form
         {
             Title = "🚀 Démarrer avec Windows",
             Checked = CheckStartupConfig(),
-            Location = new Point(12, 42),
-            Size = new Size(370, 34)
+            Location = new Point(12, 50),
+            Size = new Size(420, 34)
         };
         chkRunAtStartup.CheckedChanged += ChkRunAtStartup_CheckedChanged;
 
         pnlAutoSettings.Controls.Add(chkAutoDetect);
         pnlAutoSettings.Controls.Add(chkMouseNoDelay);
         pnlAutoSettings.Controls.Add(chkRunAtStartup);
-        this.Controls.Add(pnlAutoSettings);
+        pnlMainContent.Controls.Add(pnlAutoSettings);
 
         // ══════════════════════════════════════════════════════════
         // 8. Activity Log Box (Console Terminal Sombre)
         // ══════════════════════════════════════════════════════════
         ModernCard pnlLogCard = new ModernCard
         {
-            Location = new Point(20, 654),
-            Size = new Size(780, 122),
+            Location = new Point(24, 922),
+            Size = new Size(contentWidth - 48, 146),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BorderRadius = 10,
             FillColor = Color.FromArgb(10, 8, 20),
             BorderColor = Color.FromArgb(40, 32, 70),
@@ -632,7 +769,8 @@ public partial class Form1 : Form
         rtbLogs = new RichTextBox
         {
             Location = new Point(14, 24),
-            Size = new Size(752, 90),
+            Size = new Size(pnlLogCard.ClientSize.Width - 28, pnlLogCard.ClientSize.Height - 34),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             BackColor = Color.FromArgb(10, 8, 20),
             ForeColor = Color.FromArgb(216, 180, 254),
             BorderStyle = BorderStyle.None,
@@ -640,8 +778,120 @@ public partial class Form1 : Form
             ReadOnly = true
         };
         pnlLogCard.Controls.Add(rtbLogs);
-        this.Controls.Add(pnlLogCard);
+        pnlMainContent.Controls.Add(pnlLogCard);
 
+        Label lblBrand = new Label
+        {
+            Text = "GameEcoBot",
+            Location = new Point(68, 28),
+            Size = new Size(136, 20),
+            Font = new Font("Segoe UI Variable Display", 11f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(245, 243, 255),
+            BackColor = Color.Transparent
+        };
+        ModernCard brandMark = new ModernCard
+        {
+            Location = new Point(18, 18),
+            Size = new Size(40, 40),
+            BorderRadius = 12,
+            FillColor = Color.FromArgb(124, 58, 237),
+            BorderColor = Color.FromArgb(168, 85, 247)
+        };
+        Label brandGlyph = new Label
+        {
+            Text = "G",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI Variable Display", 16f, FontStyle.Bold),
+            ForeColor = Color.White,
+            BackColor = Color.Transparent
+        };
+        brandMark.Controls.Add(brandGlyph);
+        pnlSidebar.Controls.Add(brandMark);
+        pnlSidebar.Controls.Add(lblBrand);
+
+        Label lblNavigation = new Label
+        {
+            Text = "NAVIGATION",
+            Location = new Point(20, 88),
+            AutoSize = true,
+            Font = new Font("Segoe UI Variable Text", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(137, 122, 173),
+            BackColor = Color.Transparent
+        };
+        pnlSidebar.Controls.Add(lblNavigation);
+        var sidebarNavButtons = new List<ModernButton>();
+        void AddNavigationItem(string text, int y, Control target, bool isActive = false)
+        {
+            var navButton = new ModernButton
+            {
+                Text = text,
+                Location = new Point(12, y),
+                Size = new Size(sidebarWidth - 24, 38),
+                BorderRadius = 10,
+                HasBorder = false,
+                NormalColor = isActive ? Color.FromArgb(36, 27, 58) : Color.Transparent,
+                HoverColor = Color.FromArgb(31, 24, 50),
+                PressedColor = Color.FromArgb(47, 34, 75),
+                ForeColor = isActive ? Color.White : Color.FromArgb(181, 168, 211),
+                Font = new Font("Segoe UI Variable Text", 9.5f, isActive ? FontStyle.Bold : FontStyle.Regular)
+            };
+            sidebarNavButtons.Add(navButton);
+            navButton.Click += (s, e) =>
+            {
+                pnlMainContent.ScrollControlIntoView(target);
+                foreach (var item in sidebarNavButtons)
+                {
+                    bool selected = item == navButton;
+                    item.NormalColor = selected ? Color.FromArgb(36, 27, 58) : Color.Transparent;
+                    item.ForeColor = selected ? Color.White : Color.FromArgb(181, 168, 211);
+                    item.Font = new Font("Segoe UI Variable Text", 9.5f, selected ? FontStyle.Bold : FontStyle.Regular);
+                    item.Invalidate();
+                }
+            };
+            pnlSidebar.Controls.Add(navButton);
+        }
+        AddNavigationItem("Vue d’ensemble", 120, lblPageTitle, true);
+        AddNavigationItem("Performances", 166, pnlGraphContainer);
+        AddNavigationItem("Commandes", 212, pnlActionsRow);
+        AddNavigationItem("Réglages", 258, pnlAutoSettings);
+        AddNavigationItem("Journal", 304, pnlLogCard);
+
+        Label lblTools = new Label
+        {
+            Text = "OUTILS",
+            Location = new Point(20, 366),
+            AutoSize = true,
+            Font = new Font("Segoe UI Variable Text", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(137, 122, 173),
+            BackColor = Color.Transparent
+        };
+        pnlSidebar.Controls.Add(lblTools);
+        var btnSidebarAdvisor = CreateVioletActionButton("Optimisations IA", Color.FromArgb(109, 40, 217), new Point(16, 390), sidebarWidth - 32, (s, e) => OpenOptimizationAdvisor());
+        btnSidebarAdvisor.Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold);
+        pnlSidebar.Controls.Add(btnSidebarAdvisor);
+
+        Panel sidebarDivider = new Panel
+        {
+            Location = new Point(sidebarWidth - 1, 0),
+            Size = new Size(1, this.ClientSize.Height),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right,
+            BackColor = Color.FromArgb(60, 48, 105)
+        };
+        pnlSidebar.Controls.Add(sidebarDivider);
+
+        Panel headerDivider = new Panel
+        {
+            Location = new Point(0, headerHeight - 1),
+            Size = new Size(pnlHeader.ClientSize.Width, 1),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.FromArgb(60, 48, 105)
+        };
+        pnlHeader.Controls.Add(headerDivider);
+
+        this.Controls.Add(pnlMainContent);
+        this.Controls.Add(pnlSidebar);
+        this.Controls.Add(pnlHeader);
         this.FormClosing += Form1_FormClosing;
     }
 
@@ -782,17 +1032,17 @@ public partial class Form1 : Form
         {
             Location = location,
             Size = new Size(width, height),
-            BorderRadius = 10,
-            FillColor = Color.FromArgb(18, 14, 38),
-            BorderColor = Color.FromArgb(50, 40, 84),
+            BorderRadius = 12,
+            FillColor = Color.FromArgb(22, 17, 44),
+            BorderColor = Color.FromArgb(60, 48, 105),
             Padding = new Padding(14, 8, 14, 8)
         };
 
         Label lbl = new Label
         {
             Text = label,
-            Font = new Font("Segoe UI Variable Text", 7.5f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(160, 145, 195),
+            Font = new Font("Segoe UI Variable Text", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(181, 168, 211),
             Location = new Point(12, 10),
             AutoSize = true,
             BackColor = Color.Transparent
@@ -801,7 +1051,7 @@ public partial class Form1 : Form
         valLabel = new Label
         {
             Text = defaultValue,
-            Font = new Font("Segoe UI Variable Display", 12f, FontStyle.Bold),
+            Font = new Font("Segoe UI Variable Display", 13f, FontStyle.Bold),
             ForeColor = accentColor,
             Location = new Point(12, 32),
             AutoSize = true,
@@ -811,6 +1061,109 @@ public partial class Form1 : Form
         card.Controls.Add(lbl);
         card.Controls.Add(valLabel);
         return card;
+    }
+
+    private ModernCard CreateResourceMetricCard(string title, string initialValue, string status, Color accent, bool showProgress, out Label valueLabel, out Panel? progressTrack, out Panel? progressFill)
+    {
+        ModernCard card = new ModernCard
+        {
+            Location = Point.Empty,
+            Size = new Size(320, 116),
+            BorderRadius = 12,
+            FillColor = Color.FromArgb(22, 17, 44),
+            BorderColor = Color.FromArgb(60, 48, 105),
+            Padding = new Padding(16, 10, 16, 10)
+        };
+        Label eyebrow = new Label
+        {
+            Text = "MESURE SYSTÈME",
+            Font = new Font("Segoe UI Variable Text", 7.5f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(181, 168, 211),
+            Location = new Point(16, 10),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        Label titleLabel = new Label
+        {
+            Text = title,
+            Font = new Font("Segoe UI Variable Text", 9f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(245, 243, 255),
+            Location = new Point(16, 29),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        valueLabel = new Label
+        {
+            Text = initialValue,
+            Font = new Font("Segoe UI Variable Display", 24f, FontStyle.Bold),
+            ForeColor = accent,
+            Location = new Point(16, 49),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        Label statusLabel = new Label
+        {
+            Text = status,
+            Font = new Font("Segoe UI Variable Text", 7.2f, FontStyle.Bold),
+            ForeColor = accent,
+            Location = new Point(card.Width - 100, 16),
+            AutoSize = true,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+        card.Controls.Add(eyebrow);
+        card.Controls.Add(titleLabel);
+        card.Controls.Add(valueLabel);
+        card.Controls.Add(statusLabel);
+        progressTrack = null;
+        progressFill = null;
+        if (showProgress)
+        {
+            Panel track = new Panel
+            {
+                Location = new Point(16, 96),
+                Size = new Size(card.Width - 32, 5),
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                BackColor = Color.FromArgb(60, 48, 105),
+                Tag = 0f
+            };
+            Panel fill = new Panel
+            {
+                Location = Point.Empty,
+                Size = new Size(0, 5),
+                BackColor = accent
+            };
+            track.Controls.Add(fill);
+            track.Resize += (s, e) =>
+            {
+                float percent = track.Tag is float current ? current : 0f;
+                fill.Width = Math.Clamp((int)Math.Round(track.ClientSize.Width * percent / 100f), 0, track.ClientSize.Width);
+            };
+            card.Controls.Add(track);
+            progressTrack = track;
+            progressFill = fill;
+        }
+        return card;
+    }
+
+    private void UpdateHardwareMetrics()
+    {
+        if (hardwareGraph == null || lblCpuValue == null || lblRamValue == null || pnlCpuProgressTrack == null || pnlCpuProgressFill == null || pnlRamProgressTrack == null || pnlRamProgressFill == null)
+            return;
+        float? cpu = hardwareGraph.CpuUsage;
+        float ram = Math.Clamp(hardwareGraph.RamUsage, 0f, 100f);
+        lblCpuValue.Text = cpu.HasValue ? $"{cpu.Value:0}%" : "N/D";
+        lblRamValue.Text = $"{ram:0}%";
+        lblGpuValue.Text = "N/D";
+        SetMetricProgress(pnlCpuProgressTrack, pnlCpuProgressFill, cpu ?? 0f);
+        SetMetricProgress(pnlRamProgressTrack, pnlRamProgressFill, ram);
+    }
+
+    private static void SetMetricProgress(Panel track, Panel fill, float value)
+    {
+        float percent = Math.Clamp(value, 0f, 100f);
+        track.Tag = percent;
+        fill.Width = Math.Clamp((int)Math.Round(track.ClientSize.Width * percent / 100f), 0, track.ClientSize.Width);
     }
 
     protected override void OnPaint(PaintEventArgs e)
