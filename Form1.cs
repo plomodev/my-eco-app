@@ -51,10 +51,10 @@ public partial class Form1 : Form
     private Label lblCpuValue;
     private Label lblRamValue;
     private Label lblGpuValue;
-    private Panel pnlCpuProgressTrack;
-    private Panel pnlCpuProgressFill;
-    private Panel pnlRamProgressTrack;
-    private Panel pnlRamProgressFill;
+    private Panel? pnlCpuProgressTrack;
+    private Panel? pnlCpuProgressFill;
+    private Panel? pnlRamProgressTrack;
+    private Panel? pnlRamProgressFill;
     private RichTextBox rtbLogs;
     private bool isSnappingReentrant = false;
     private ModernToggleSwitch chkAutoDetect;
@@ -211,8 +211,9 @@ public partial class Form1 : Form
 
     private void BuildAllVioletUi()
     {
-        this.Size = new Size(1280, 960);
-        this.MinimumSize = new Size(1050, 760);
+        Rectangle workArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 960);
+        this.Size = new Size(Math.Min(1280, workArea.Width), Math.Min(960, workArea.Height));
+        this.MinimumSize = new Size(Math.Min(1050, workArea.Width), Math.Min(760, workArea.Height));
         this.BackColor = Color.FromArgb(12, 10, 24);
         this.ForeColor = Color.White;
         this.Font = new Font("Segoe UI Variable Text", 9.5f, FontStyle.Regular);
@@ -1155,8 +1156,8 @@ public partial class Form1 : Form
         lblCpuValue.Text = cpu.HasValue ? $"{cpu.Value:0}%" : "N/D";
         lblRamValue.Text = $"{ram:0}%";
         lblGpuValue.Text = "N/D";
-        SetMetricProgress(pnlCpuProgressTrack, pnlCpuProgressFill, cpu ?? 0f);
-        SetMetricProgress(pnlRamProgressTrack, pnlRamProgressFill, ram);
+        SetMetricProgress(pnlCpuProgressTrack!, pnlCpuProgressFill!, cpu ?? 0f);
+        SetMetricProgress(pnlRamProgressTrack!, pnlRamProgressFill!, ram);
     }
 
     private static void SetMetricProgress(Panel track, Panel fill, float value)
