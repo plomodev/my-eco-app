@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -39,9 +43,24 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "$env:GITHUB_REF_NAME"
-          "publish/win-x64/GameEcoBot.exe"
-          --title "GameEcoBot $env:GITHUB_REF_NAME — Téléchargement Windows x64"
-          --notes "Exécutable autonome Windows x64. Le dépôt est privé : le téléchargement est réservé aux personnes ayant accès au dépôt."
-          --verify-tag
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $exe = "publish/win-x64/GameEcoBot.exe"
+          $releaseJson = gh release view $tag --json assets 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $releaseJson | ConvertFrom-Json
+            if ($release.assets.name -contains "GameEcoBot.exe") {
+              Write-Host "Release $tag already contains GameEcoBot.exe; skipping duplicate upload."
+              exit 0
+            }
+
+            gh release upload $tag $exe --clobber
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            exit 0
+          }
+
+          gh release create $tag $exe `
+            --title "GameEcoBot $tag — Téléchargement Windows x64" `
+            --notes "Exécutable autonome Windows x64. Le dépôt est privé : le téléchargement est réservé aux personnes ayant accès au dépôt." `
+            --verify-tag
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

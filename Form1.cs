@@ -34,13 +34,11 @@ public partial class Form1 : Form
 
     // Angle Snapping avec pourcentage réglable (1% à 100%)
     private bool isAngleSnappingActive = false;
-    private int angleSnappingPercent = 50;
+    private int angleSnappingPercent = 100;
     private IntPtr mouseHookId = IntPtr.Zero;
     private NativeMethods.LowLevelMouseProc? mouseProc;
     private int lastMouseX = 0;
     private int lastMouseY = 0;
-    private double snapSubPixelX = 0.0;
-    private double snapSubPixelY = 0.0;
     private bool hasLastMousePos = false;
     private const int HOTKEY_ID_F8 = 9001;
 
@@ -135,9 +133,6 @@ public partial class Form1 : Form
 
         BuildAllVioletUi();
         SetupTray();
-
-        // Angle Snapping forcé à 100% ultra-agressif
-        angleSnappingPercent = 100;
 
         monitorTimer = new System.Windows.Forms.Timer();
         monitorTimer.Interval = 2000;
@@ -530,7 +525,7 @@ public partial class Form1 : Form
 
         Label lblSliderTitle = new Label
         {
-            Text = "Précision :",
+            Text = "Force :",
             Location = new Point(340, 18),
             AutoSize = true,
             ForeColor = Color.FromArgb(175, 165, 215),
@@ -540,7 +535,7 @@ public partial class Form1 : Form
 
         lblAnglePercentValue = new Label
         {
-            Text = "50%",
+            Text = "100%",
             Location = new Point(415, 16),
             AutoSize = true,
             ForeColor = Color.FromArgb(216, 180, 254),
@@ -554,7 +549,7 @@ public partial class Form1 : Form
             Size = new Size(295, 26),
             Minimum = 5,
             Maximum = 100,
-            Value = 50
+            Value = 100
         };
         tbAngleSnapping.ValueChanged += (s, e) =>
         {
@@ -882,8 +877,6 @@ public partial class Form1 : Form
     {
         isAngleSnappingActive = !isAngleSnappingActive;
         hasLastMousePos = false;
-        snapSubPixelX = 0.0;
-        snapSubPixelY = 0.0;
 
         if (chkAngleSnapping != null) chkAngleSnapping.Checked = isAngleSnappingActive;
 
@@ -897,10 +890,11 @@ public partial class Form1 : Form
             }
 
             btnToggleAngleSnapping.BackColor = Color.FromArgb(168, 85, 247);
-            btnToggleAngleSnapping.Text = "🎯 Snapping 100% ULTRA";
-            lblAngleStatus.Text = "100% ULTRA ACTIF";
+            btnToggleAngleSnapping.Text = $"🎯 Snapping ({angleSnappingPercent}%)";
+            lblAngleStatus.Text = $"{angleSnappingPercent}% ACTIF";
             lblAngleStatus.ForeColor = Color.FromArgb(192, 132, 252);
-            Log("🎯 ANGLE SNAPPING 100% ULTRA-AGRESSIF ACTIVÉ — Axe parasite totalement supprimé !");
+            double threshold = 5.0 + angleSnappingPercent * 0.20;
+            Log($"🎯 Angle Snapping activé à {angleSnappingPercent}% (zone de capture {threshold:0}°).");
         }
         else
         {
@@ -943,8 +937,6 @@ public partial class Form1 : Form
                 lastMouseX = curX;
                 lastMouseY = curY;
                 hasLastMousePos = true;
-                snapSubPixelX = 0;
-                snapSubPixelY = 0;
                 return NativeMethods.CallNextHookEx(mouseHookId, nCode, wParam, lParam);
             }
 
@@ -958,63 +950,37 @@ public partial class Form1 : Form
             int absDy = Math.Abs(dy);
 
             // ═══════════════════════════════════════════════════════════════════
-            // ANGLE SNAPPING 100% ULTRA-AGRESSIF
-            //
-            // Seuil fixe 22° : tout mouvement à moins de 22° d'un axe cardinal
-            // est ENTIÈREMENT verrouillé sur cet axe.
-            // → L'axe parasite est mis à 0 (suppression totale, pas de facteur).
-            // → L'axe principal est transmis à 100%, sans perte.
-            // → Accumulateur sous-pixel : le résidu sub-entier est conservé et
-            //   réinjecté au prochain tick pour une trajectoire parfaitement lisse.
-            //
-            // Anti-flick (500px) : un vrai flick rapide passe toujours librement.
-            // Diagonales (>22° et <68°) : 0 interférence, mouvement libre total.
+            // Puissance réglable : elle élargit la zone de capture et réduit
+            // progressivement l'axe secondaire. Les diagonales hors zone restent libres.
             // ═══════════════════════════════════════════════════════════════════
 
-            // Anti-flick : seuil ultra-permissif
+            // Laisser passer les mouvements rapides pour préserver les flicks.
             if (absDx > 500 || absDy > 500)
             {
                 lastMouseX = curX;
                 lastMouseY = curY;
-                snapSubPixelX = 0;
-                snapSubPixelY = 0;
                 return NativeMethods.CallNextHookEx(mouseHookId, nCode, wParam, lParam);
             }
 
             double angleDeg = Math.Atan2(absDy, absDx) * (180.0 / Math.PI);
-            const double SNAP_THRESHOLD = 22.0; // Zone de magnétisation (fixe, max agressivité)
+            double snapStrength = Math.Clamp(angleSnappingPercent / 100.0, 0.05, 1.0);
+            double snapThreshold = 5.0 + angleSnappingPercent * 0.20;
 
             int targetDx = dx;
             int targetDy = dy;
             bool shouldSnap = false;
 
-            if (angleDeg <= SNAP_THRESHOLD && absDx >= 1)
+            if (angleDeg <= snapThreshold && absDx >= 1)
             {
-                // SNAP HORIZONTAL TOTAL : axe Y = 0, sous-pixel accumulé
-                double rawDy = snapSubPixelY; // 0 * dy + résidu sous-pixel
-                int intDy = (int)Math.Round(rawDy);
-                snapSubPixelY = rawDy - intDy;
-
-                targetDx = dx;    // 100% course horizontale préservée
-                targetDy = intDy; // axe Y totalement supprimé (ou résidu sous-pixel)
+                targetDx = dx;
+                targetDy = (int)Math.Round(dy * (1.0 - snapStrength));
                 shouldSnap = true;
             }
-            else if ((90.0 - angleDeg) <= SNAP_THRESHOLD && absDy >= 1)
+            else if ((90.0 - angleDeg) <= snapThreshold && absDy >= 1)
             {
-                // SNAP VERTICAL TOTAL : axe X = 0, sous-pixel accumulé
-                double rawDx = snapSubPixelX;
-                int intDx = (int)Math.Round(rawDx);
-                snapSubPixelX = rawDx - intDx;
-
-                targetDx = intDx; // axe X totalement supprimé (ou résidu sous-pixel)
-                targetDy = dy;    // 100% course verticale préservée
+                targetDx = (int)Math.Round(dx * (1.0 - snapStrength));
+                targetDy = dy;
                 shouldSnap = true;
-            }
-            else
-            {
-                // Diagonale franche (22°–68°) : mouvement libre, 0 interférence
-                snapSubPixelX = 0;
-                snapSubPixelY = 0;
             }
 
             if (shouldSnap)
