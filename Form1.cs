@@ -60,6 +60,7 @@ public partial class Form1 : Form
     private ModernToggleSwitch chkAutoDetect;
     private ModernToggleSwitch chkMouseNoDelay;
     private ModernToggleSwitch chkRunAtStartup;
+    private ModernToggleSwitch chkAutoTurbo;
     private ModernToggleSwitch chkAngleSnapping;
     private ModernSlider tbAngleSnapping;
     private Label lblAnglePercentValue;
@@ -139,6 +140,8 @@ public partial class Form1 : Form
 
         BuildAllVioletUi();
         SetupTray();
+        // Restaure un éventuel plan sauvegardé avant un arrêt inattendu.
+        NativeMethods.SetUltimateGamingPowerPlan(false);
 
         monitorTimer = new System.Windows.Forms.Timer();
         monitorTimer.Interval = 2000;
@@ -162,7 +165,7 @@ public partial class Form1 : Form
     private async void FastDetectionTimer_Tick(object? sender, EventArgs e)
     {
         // Boost IA Ultra-Réactif toujours actif (pas de toggle)
-        if (chkAutoDetect != null && chkAutoDetect.Checked)
+        if (chkAutoDetect != null && (chkAutoDetect.Checked || (chkAutoTurbo != null && chkAutoTurbo.Checked)))
         {
             IntPtr fg = NativeMethods.GetForegroundWindow();
             if (fg != IntPtr.Zero)
@@ -738,9 +741,46 @@ public partial class Form1 : Form
         };
         chkRunAtStartup.CheckedChanged += ChkRunAtStartup_CheckedChanged;
 
+        chkAutoTurbo = new ModernToggleSwitch
+        {
+            Title = "Turbo CPU en jeu",
+            Checked = true,
+            Location = new Point(480, 50),
+            Size = new Size(pnlAutoSettings.ClientSize.Width - 500, 34),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+        chkAutoTurbo.CheckedChanged += (s, e) =>
+        {
+            if (chkAutoTurbo.Checked)
+            {
+                if (isGameActive)
+                {
+                    bool activated = NativeMethods.SetUltimateGamingPowerPlan(true);
+                    lblStatusHeader.Text = $"🔥 MODE JEU ACTIF • {activeGameName.ToUpper()}";
+                    lblStatusHeader.ForeColor = Color.FromArgb(216, 180, 254);
+                    Log(activated ? $"⚡ Plan de jeu activé pour {activeGameName}." : "⚠️ Windows n'a pas pu activer le plan de jeu.");
+                }
+                else
+                {
+                    Log("⚡ Turbo CPU activé uniquement pendant les jeux détectés.");
+                }
+            }
+            else
+            {
+                bool restored = NativeMethods.SetUltimateGamingPowerPlan(false);
+                Log(restored ? "ℹ️ Turbo CPU en jeu désactivé; plan précédent restauré." : "⚠️ Windows n'a pas pu restaurer le plan précédent.");
+                if (isGameActive)
+                {
+                    lblStatusHeader.Text = $"🎮 {activeGameName.ToUpper()} • CPU NORMAL";
+                    lblStatusHeader.ForeColor = Color.FromArgb(181, 168, 211);
+                }
+            }
+        };
+
         pnlAutoSettings.Controls.Add(chkAutoDetect);
         pnlAutoSettings.Controls.Add(chkMouseNoDelay);
         pnlAutoSettings.Controls.Add(chkRunAtStartup);
+        pnlAutoSettings.Controls.Add(chkAutoTurbo);
         pnlMainContent.Controls.Add(pnlAutoSettings);
 
         // ══════════════════════════════════════════════════════════
@@ -1323,6 +1363,7 @@ public partial class Form1 : Form
     private void ExitApp()
     {
         monitorTimer.Stop();
+        NativeMethods.SetUltimateGamingPowerPlan(false);
         NativeMethods.EnableHighPrecisionTimer(false);
         NativeMethods.EnableMouseNoDelay(false);
         if (mouseHookId != IntPtr.Zero)
@@ -1341,7 +1382,10 @@ public partial class Form1 : Form
         {
             e.Cancel = true;
             this.Hide();
+            return;
         }
+
+        NativeMethods.SetUltimateGamingPowerPlan(false);
     }
 
     private async void MonitorTimer_Tick(object? sender, EventArgs e)
@@ -1361,7 +1405,7 @@ public partial class Form1 : Form
 
             var processes = Process.GetProcesses();
 
-            if (!chkAutoDetect.Checked && !isManualEcoActive)
+            if (!chkAutoDetect.Checked && !isManualEcoActive && !chkAutoTurbo.Checked && !isGameActive)
             {
                 return;
             }
@@ -1437,20 +1481,30 @@ public partial class Form1 : Form
                     NativeMethods.BoostGameProcess(detectedGame.Id);
                     // 2. Timer Windows 1ms Haute Précision
                     NativeMethods.EnableHighPrecisionTimer(true);
-                    // 3. Bascule Automatique vers Mode d'Alimentation Ultime (+300% de réactivité CPU)
-                    NativeMethods.SetUltimateGamingPowerPlan(true);
+                    // Le plan hautes performances ne s'active que si l'option Turbo CPU en jeu est cochée.
+                    if (chkAutoTurbo.Checked)
+                    {
+                        bool activated = NativeMethods.SetUltimateGamingPowerPlan(true);
+                        Log(activated ? $"⚡ Plan de jeu activé pour {activeGameName}." : "⚠️ Windows n'a pas pu activer le plan de jeu.");
+                    }
+                    else
+                    {
+                        NativeMethods.SetUltimateGamingPowerPlan(false);
+                    }
 
-                    Log($"🎮 Jeu détecté : {activeGameName}. Priorité haute, timer précis et mode d’alimentation jeu activés.");
+                    Log($"🎮 Jeu détecté : {activeGameName}. Priorité haute et timer précis activés.");
 
                     pnlStatusBanner.BackColor = Color.FromArgb(45, 20, 65);
                     lblStatusHeader.Text = $"🔥 MODE JEU ACTIF • {activeGameName.ToUpper()}";
                     lblStatusHeader.ForeColor = Color.FromArgb(216, 180, 254);
 
-                    ApplyEcoToAllBackgroundApps(processes, detectedGame.Id);
+                    if (chkAutoDetect.Checked || isManualEcoActive)
+                        ApplyEcoToAllBackgroundApps(processes, detectedGame.Id);
                 }
                 else
                 {
-                    ApplyEcoToAllBackgroundApps(processes, detectedGame.Id);
+                    if (chkAutoDetect.Checked || isManualEcoActive)
+                        ApplyEcoToAllBackgroundApps(processes, detectedGame.Id);
                 }
             }
             else
@@ -1459,8 +1513,10 @@ public partial class Form1 : Form
                 {
                     isGameActive = false;
                     NativeMethods.EnableHighPrecisionTimer(false);
-                    NativeMethods.SetUltimateGamingPowerPlan(false);
-                    Log($"ℹ️ {activeGameName} s'est arrêté. Rétablissement du mode équilibré.");
+                    bool planRestored = NativeMethods.SetUltimateGamingPowerPlan(false);
+                    Log(planRestored
+                        ? $"ℹ️ {activeGameName} s'est arrêté. Plan d'alimentation précédent rétabli."
+                        : $"⚠️ {activeGameName} s'est arrêté, mais Windows n'a pas pu restaurer le plan précédent.");
                     activeGameName = "";
                     lblActiveGame.Text = "En attente...";
 
