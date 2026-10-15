@@ -140,8 +140,9 @@ public partial class Form1 : Form
 
         BuildAllVioletUi();
         SetupTray();
-        // Restaure un éventuel plan sauvegardé avant un arrêt inattendu.
-        NativeMethods.SetUltimateGamingPowerPlan(false);
+        // Restaure un plan laissé actif par une ancienne version ou un arrêt inattendu.
+        bool startupPlanRestored = NativeMethods.RestoreNormalPowerPlan();
+        if (!startupPlanRestored) Log("⚠️ Windows n'a pas pu restaurer le plan normal.");
 
         monitorTimer = new System.Windows.Forms.Timer();
         monitorTimer.Interval = 2000;
@@ -767,8 +768,8 @@ public partial class Form1 : Form
             }
             else
             {
-                bool restored = NativeMethods.SetUltimateGamingPowerPlan(false);
-                Log(restored ? "ℹ️ Turbo CPU en jeu désactivé; plan précédent restauré." : "⚠️ Windows n'a pas pu restaurer le plan précédent.");
+                bool restored = NativeMethods.RestoreNormalPowerPlan();
+                Log(restored ? "ℹ️ Turbo CPU en jeu désactivé; plan normal restauré." : "⚠️ Windows n'a pas pu restaurer le plan normal.");
                 if (isGameActive)
                 {
                     lblStatusHeader.Text = $"🎮 {activeGameName.ToUpper()} • CPU NORMAL";
