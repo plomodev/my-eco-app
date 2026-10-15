@@ -435,8 +435,31 @@ public static class NativeMethods
     private static extern IntPtr LocalFree(IntPtr hMem);
 
     private static Guid? _previousPowerScheme = null;
+    private const string PowerPlanBackupPath = @"Software\GameEcoBot";
+    private const string PowerPlanBackupValue = "OriginalPowerSchemeGuid";
     private static readonly Guid HighPerformanceGuid = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
     private static readonly Guid UltimatePerformanceGuid = new("e9a42b02-d5df-448d-aa00-03f14749eb61");
+
+    private static Guid? LoadOriginalPowerScheme()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(PowerPlanBackupPath, false);
+        string? saved = key?.GetValue(PowerPlanBackupValue) as string;
+        return Guid.TryParse(saved, out Guid scheme) ? scheme : null;
+    }
+
+    private static bool SaveOriginalPowerScheme(Guid scheme)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(PowerPlanBackupPath);
+        if (key == null) return false;
+        key.SetValue(PowerPlanBackupValue, scheme.ToString("D"), RegistryValueKind.String);
+        return true;
+    }
+
+    private static void ClearOriginalPowerScheme()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(PowerPlanBackupPath, true);
+        key?.DeleteValue(PowerPlanBackupValue, false);
+    }
 
     public static bool SetUltimateGamingPowerPlan(bool enable)
     {
@@ -444,10 +467,17 @@ public static class NativeMethods
         {
             if (enable)
             {
-                if (_previousPowerScheme == null)
+                if (!_previousPowerScheme.HasValue)
                 {
-                    if (PowerGetActiveScheme(IntPtr.Zero, out IntPtr activeGuidPtr) == 0 && activeGuidPtr != IntPtr.Zero)
+                    _previousPowerScheme = LoadOriginalPowerScheme();
+                    if (!_previousPowerScheme.HasValue)
                     {
+                        uint queryResult = PowerGetActiveScheme(IntPtr.Zero, out IntPtr activeGuidPtr);
+                        if (queryResult != 0 || activeGuidPtr == IntPtr.Zero)
+                        {
+                            if (activeGuidPtr != IntPtr.Zero) LocalFree(activeGuidPtr);
+                            return false;
+                        }
                         try
                         {
                             _previousPowerScheme = Marshal.PtrToStructure<Guid>(activeGuidPtr);
@@ -456,28 +486,33 @@ public static class NativeMethods
                         {
                             LocalFree(activeGuidPtr);
                         }
+                        if (!SaveOriginalPowerScheme(_previousPowerScheme.Value))
+                        {
+                            _previousPowerScheme = null;
+                            return false;
+                        }
                     }
                 }
 
-                // Tenter Performance Ultime d'abord, puis Haute Performance
                 Guid target = UltimatePerformanceGuid;
                 if (PowerSetActiveScheme(IntPtr.Zero, ref target) != 0)
                 {
                     target = HighPerformanceGuid;
-                    PowerSetActiveScheme(IntPtr.Zero, ref target);
+                    if (PowerSetActiveScheme(IntPtr.Zero, ref target) != 0)
+                        return false;
                 }
                 return true;
             }
-            else
-            {
-                if (_previousPowerScheme.HasValue)
-                {
-                    Guid restore = _previousPowerScheme.Value;
-                    PowerSetActiveScheme(IntPtr.Zero, ref restore);
-                    _previousPowerScheme = null;
-                }
-                return true;
-            }
+
+            Guid? originalScheme = _previousPowerScheme ?? LoadOriginalPowerScheme();
+            if (!originalScheme.HasValue) return true;
+            Guid restore = originalScheme.Value;
+            if (PowerSetActiveScheme(IntPtr.Zero, ref restore) != 0)
+                return false;
+
+            _previousPowerScheme = null;
+            ClearOriginalPowerScheme();
+            return true;
         }
         catch
         {
