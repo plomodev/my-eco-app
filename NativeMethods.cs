@@ -437,6 +437,7 @@ public static class NativeMethods
     private static Guid? _previousPowerScheme = null;
     private const string PowerPlanBackupPath = @"Software\GameEcoBot";
     private const string PowerPlanBackupValue = "OriginalPowerSchemeGuid";
+    private static readonly Guid BalancedPowerGuid = new("381b4222-f694-41f0-9685-ff5bb260df2e");
     private static readonly Guid HighPerformanceGuid = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
     private static readonly Guid UltimatePerformanceGuid = new("e9a42b02-d5df-448d-aa00-03f14749eb61");
 
@@ -461,6 +462,26 @@ public static class NativeMethods
         key?.DeleteValue(PowerPlanBackupValue, false);
     }
 
+    private static bool TryGetActivePowerScheme(out Guid scheme)
+    {
+        scheme = Guid.Empty;
+        uint result = PowerGetActiveScheme(IntPtr.Zero, out IntPtr activeGuidPtr);
+        if (result != 0 || activeGuidPtr == IntPtr.Zero)
+        {
+            if (activeGuidPtr != IntPtr.Zero) LocalFree(activeGuidPtr);
+            return false;
+        }
+        try
+        {
+            scheme = Marshal.PtrToStructure<Guid>(activeGuidPtr);
+            return true;
+        }
+        finally
+        {
+            LocalFree(activeGuidPtr);
+        }
+    }
+
     public static bool SetUltimateGamingPowerPlan(bool enable)
     {
         try
@@ -472,21 +493,10 @@ public static class NativeMethods
                     _previousPowerScheme = LoadOriginalPowerScheme();
                     if (!_previousPowerScheme.HasValue)
                     {
-                        uint queryResult = PowerGetActiveScheme(IntPtr.Zero, out IntPtr activeGuidPtr);
-                        if (queryResult != 0 || activeGuidPtr == IntPtr.Zero)
-                        {
-                            if (activeGuidPtr != IntPtr.Zero) LocalFree(activeGuidPtr);
+                        if (!TryGetActivePowerScheme(out Guid currentScheme))
                             return false;
-                        }
-                        try
-                        {
-                            _previousPowerScheme = Marshal.PtrToStructure<Guid>(activeGuidPtr);
-                        }
-                        finally
-                        {
-                            LocalFree(activeGuidPtr);
-                        }
-                        if (!SaveOriginalPowerScheme(_previousPowerScheme.Value))
+                        _previousPowerScheme = currentScheme;
+                        if (!SaveOriginalPowerScheme(currentScheme))
                         {
                             _previousPowerScheme = null;
                             return false;
@@ -513,6 +523,27 @@ public static class NativeMethods
             _previousPowerScheme = null;
             ClearOriginalPowerScheme();
             return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool RestoreNormalPowerPlan()
+    {
+        try
+        {
+            if (_previousPowerScheme.HasValue || LoadOriginalPowerScheme().HasValue)
+                return SetUltimateGamingPowerPlan(false);
+
+            if (!TryGetActivePowerScheme(out Guid currentScheme))
+                return false;
+            if (currentScheme != UltimatePerformanceGuid && currentScheme != HighPerformanceGuid)
+                return true;
+
+            Guid balanced = BalancedPowerGuid;
+            return PowerSetActiveScheme(IntPtr.Zero, ref balanced) == 0;
         }
         catch
         {
