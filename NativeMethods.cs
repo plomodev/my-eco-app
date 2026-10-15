@@ -163,6 +163,35 @@ public static class NativeMethods
         }
     }
 
+    // EcoQoS for a foreground game: no idle priority and no working-set purge.
+    public static bool ApplyGameEcoMode(int pid, bool enable)
+    {
+        IntPtr handle = OpenProcess(PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (handle == IntPtr.Zero) return false;
+
+        try
+        {
+            var throttling = new PROCESS_POWER_THROTTLING_STATE
+            {
+                Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+                StateMask = enable ? PROCESS_POWER_THROTTLING_EXECUTION_SPEED : 0
+            };
+
+            bool throttlingApplied = SetProcessInformation(handle, ProcessPowerThrottling, ref throttling, (uint)Marshal.SizeOf(throttling));
+            bool priorityApplied = SetPriorityClass(handle, enable ? BELOW_NORMAL_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+            return throttlingApplied && priorityApplied;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
     public static bool BoostGameProcess(int pid)
     {
         IntPtr handle = OpenProcess(PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
