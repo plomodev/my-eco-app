@@ -1,1 +1,2 @@
 - [GitHub release uploads](github-release-uploads.md) — the connected GitHub proxy may block binary uploads; verify the repo workflow or use a user-driven upload.
+- [GitHub workflow writes](github-workflow-writes.md) — writes to `.github/workflows/` may be blocked by the GitHub connector even when other repository writes work.
