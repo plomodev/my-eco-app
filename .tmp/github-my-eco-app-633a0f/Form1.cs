@@ -1,0 +1,1697 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using Microsoft.Win32;
+
+namespace GameEcoBot;
+
+public partial class Form1 : Form
+{
+    private NotifyIcon trayIcon;
+    private ContextMenuStrip trayMenu;
+    private System.Windows.Forms.Timer monitorTimer;
+    private bool isGameActive = false;
+    private bool isManualEcoActive = false;
+    private bool isDetectionRunning = false;
+    private string activeGameName = "";
+    private HashSet<int> currentlyThrottledPids = new();
+
+    // Service de détection des jeux réels
+    private GameIntelligenceService intelligenceService;
+
+    // Suivi de ce que l'utilisateur entend (Audio & Pochette/Image)
+    private AudioSessionTracker audioTracker;
+    private PictureBox pbSoundArt;
+    private Label lblSoundTitle;
+    private Label lblSoundArtist;
+
+    // Angle Snapping avec pourcentage réglable (1% à 100%)
+    private bool isAngleSnappingActive = false;
+    private int angleSnappingPercent = 100;
+    private IntPtr mouseHookId = IntPtr.Zero;
+    private NativeMethods.LowLevelMouseProc? mouseProc;
+    private int lastMouseX = 0;
+    private int lastMouseY = 0;
+    private bool hasLastMousePos = false;
+    private const int HOTKEY_ID_F8 = 9001;
+
+    // Contrôles d'interface haute fidélité (Pixel par pixel)
+    private Label lblStatusHeader;
+    private ModernCard pnlStatusBanner;
+    private Label lblEcoCount;
+    private Label lblActiveGame;
+    private Label lblAngleStatus;
+    private Label lblCpuValue;
+    private Label lblRamValue;
+    private Label lblGpuValue;
+    private Panel? pnlCpuProgressTrack;
+    private Panel? pnlCpuProgressFill;
+    private Panel? pnlRamProgressTrack;
+    private Panel? pnlRamProgressFill;
+    private RichTextBox rtbLogs;
+    private bool isSnappingReentrant = false;
+    private ModernToggleSwitch chkAutoDetect;
+    private ModernToggleSwitch chkMouseNoDelay;
+    private ModernToggleSwitch chkRunAtStartup;
+    private ModernToggleSwitch chkAutoTurbo;
+    private ModernToggleSwitch chkAngleSnapping;
+    private ModernSlider tbAngleSnapping;
+    private Label lblAnglePercentValue;
+    private ModernButton btnSearchGames;
+    private ModernButton btnToggleEco;
+    private ModernButton btnCleanRam;
+    private ModernButton btnToggleAngleSnapping;
+    private HardwareGraphControl hardwareGraph;
+    private ModernButton btnGraphCpu;
+    private ModernButton btnGraphRam;
+    private ModernButton btnGraphApps;
+    private ModernButton btnGraphGpu;
+
+    // Vérification rapide du jeu affiché au premier plan.
+    private System.Windows.Forms.Timer fastDetectionTimer;
+
+    // Media control buttons style Spotify / Windows 11
+    private SpotifyTrackButton btnSpotifyPrev;
+    private SpotifyPlayPauseButton btnSpotifyPlayPause;
+    private SpotifyTrackButton btnSpotifyNext;
+    private Label lblSoundSource;
+
+    private bool startMinimized = false;
+
+    // Processus protégés (JAMAIS mis en mode éco ni fermés par le limiteur)
+    private readonly HashSet<string> protectedProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Anti-cheats & Launchers Riot (Valorant, LoL)
+        "vgc", "vgtray", "RiotClientServices", "RiotClientCrashHandler", "RiotClientUx", "VALORANT", "VALORANT-Win64-Shipping",
+        // Steam
+        "steam", "steamwebhelper", "steamservice",
+        // Epic Games
+        "EpicGamesLauncher", "EpicWebHelper", "UnrealCEFSubProcess",
+        // Anti-cheats majeurs (EasyAntiCheat, BattlEye, Ricochet, Faceit, ACE, etc.)
+        "EasyAntiCheat", "EasyAntiCheat_EOS", "EasyAntiCheat_x64", "EasyAntiCheat_Sys", "start_protected_game", "EasyAntiCheat_Setup",
+        "BEService", "BEDaisy", "randgrid", "faceitclient", "faceitservice",
+        "AntiCheatExpert", "SGuard64", "SGuard32", "PnkBstrA", "PnkBstrB", "GameMon", "GameMon64", "x3.xem", "xigncode",
+        // Autres Launchers (Battle.net, EA, Ubisoft, GOG, Xbox)
+        "Battle.net", "Agent", "EADesktop", "EALauncher", "Origin", "OriginClientService", "OriginWebHelperService",
+        "upc", "Uplay", "UplayWebCore", "GalaxyClient", "GalaxyClientService", "GamingServices", "XboxAppServices", "XboxPcApp",
+        // Périphériques Audio & Gaming
+        "voicemeeter8", "voicemeeter", "voicemeeterpro", "audiodg", "RtkAudUService64", "RtkAudUService",
+        "SteelSeriesGG", "SteelSeriesSonar", "SteelSeriesEngine", "SteelSeriesGGEZ", "SteelSeriesPrism",
+        "ExitLag", "ExitLagPmService", "AudioRelay", "audiorelay-backend", "spacedeskService", "spacedeskServiceTray",
+        "CrosshairX", "AMDNoiseSuppression", "amdfendrsr", "RadeonSoftware", "AMDRSServ", "AMDRSSrcExt", "atieclxx", "atiesrxx", "amdow",
+        "nvcontainer", "nvspcaps64", "nvxdsync", "nvdisplay.container",
+        "LogitechGHub", "lghub", "lghub_agent", "lghub_system_service", "RazerSynapse", "RazerCentral", "RzSDKServer", "Corsair.Service", "iCUE",
+        // Communication & Média utiles en jeu
+        "Discord", "Spotify",
+        // Processus Noyau & Système Windows
+        "system", "idle", "registry", "smss", "csrss", "wininit", "services",
+        "lsass", "lsaiso", "winlogon", "fontdrvhost", "dwm", "ctfmon", "explorer", "sihost", "taskhostw",
+        "runtimebroker", "startmenuexperiencehost", "searchhost", "shellhost", "textinputhost", "securityhealthservice",
+        "securityhealthsystray", "smartscreen", "msmpeng", "nissrv", "mpdefendercorereservice", "taskmgr", "conhost", "svchost", "spoolsv",
+        "GameEcoBot"
+    };
+
+    public Form1(bool startMinimized = false)
+    {
+        this.startMinimized = startMinimized;
+        InitializeComponent();
+        
+        intelligenceService = new GameIntelligenceService();
+        intelligenceService.OnLog += msg => { if (!this.IsDisposed && this.IsHandleCreated) this.Invoke(() => Log(msg)); };
+
+        // Lancement en arrière-plan du scan IA des jeux installés dès le démarrage
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(1500);
+            await intelligenceService.BoostIntelligenceAsync();
+        });
+
+        audioTracker = new AudioSessionTracker();
+        audioTracker.OnTrackChanged += () => {
+            if (!this.IsDisposed && this.IsHandleCreated) this.Invoke(UpdateSoundUi);
+        };
+
+        BuildAllVioletUi();
+        SetupTray();
+        // Restaure un plan laissé actif par une ancienne version ou un arrêt inattendu.
+        bool startupPlanRestored = NativeMethods.RestoreNormalPowerPlan();
+        if (!startupPlanRestored) Log("⚠️ Windows n'a pas pu restaurer le plan normal.");
+
+        monitorTimer = new System.Windows.Forms.Timer();
+        monitorTimer.Interval = 2000;
+        monitorTimer.Tick += MonitorTimer_Tick;
+        monitorTimer.Start();
+
+        fastDetectionTimer = new System.Windows.Forms.Timer();
+        fastDetectionTimer.Interval = 250; // Détection ultra-rapide 4x par seconde
+        fastDetectionTimer.Tick += FastDetectionTimer_Tick;
+        fastDetectionTimer.Start();
+
+        // Réseau NoDelay activé en permanence
+        _ = Task.Run(() => NativeMethods.EnableNetworkPingOptimization(true));
+
+        Log("🟣 GameEcoBot 100% Violet démarré.");
+        Log("🟣 Graphique AMD Ryzen 5 5500 actif.");
+        Log("🎯 Raccourci F8 prêt pour l'Angle Snapping 100% ULTRA.");
+        Log("⚡ Réseau NoDelay + Boost IA activés en permanence.");
+    }
+
+    private async void FastDetectionTimer_Tick(object? sender, EventArgs e)
+    {
+        // Boost IA Ultra-Réactif toujours actif (pas de toggle)
+        if (chkAutoDetect != null && (chkAutoDetect.Checked || (chkAutoTurbo != null && chkAutoTurbo.Checked)))
+        {
+            IntPtr fg = NativeMethods.GetForegroundWindow();
+            if (fg != IntPtr.Zero)
+            {
+                NativeMethods.GetWindowThreadProcessId(fg, out int fgPid);
+                if (fgPid > 0 && fgPid != Process.GetCurrentProcess().Id)
+                {
+                    try
+                    {
+                        var fgProc = Process.GetProcessById(fgPid);
+                        string pName = fgProc.ProcessName;
+                        if (!GameIntelligenceService.IsExcluded(pName) && !protectedProcesses.Contains(pName))
+                        {
+                            if (intelligenceService.KnownGames.Contains(pName) && (!isGameActive || activeGameName != pName))
+                            {
+                                await CheckActiveGameAndApplyEcoAsync();
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        SetupAngleSnappingHook();
+        NativeMethods.EnableMouseNoDelay(true);
+
+        if (startMinimized)
+        {
+            this.Hide();
+        }
+        else
+        {
+            this.WindowState = FormWindowState.Normal;
+            this.BringToFront();
+            this.Activate();
+        }
+
+        Log("🟣 Optimisation NO DELAY SOURIS activée (Timer 1ms + Réponse 1:1 Raw).");
+        _ = audioTracker.UpdateAsync();
+    }
+
+    private void BuildAllVioletUi()
+    {
+        Rectangle workArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 960);
+        this.Size = new Size(Math.Min(1280, workArea.Width), Math.Min(960, workArea.Height));
+        this.MinimumSize = new Size(Math.Min(1050, workArea.Width), Math.Min(760, workArea.Height));
+        this.BackColor = Color.FromArgb(12, 10, 24);
+        this.ForeColor = Color.White;
+        this.Font = new Font("Segoe UI Variable Text", 9.5f, FontStyle.Regular);
+        this.Icon = CreateVioletAppIcon();
+        this.StartPosition = FormStartPosition.CenterScreen;
+        this.ShowInTaskbar = true;
+
+        const int sidebarWidth = 220;
+        const int headerHeight = 64;
+        int contentWidth = this.ClientSize.Width - sidebarWidth;
+
+        Panel pnlSidebar = new Panel
+        {
+            Location = Point.Empty,
+            Size = new Size(sidebarWidth, this.ClientSize.Height),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left,
+            BackColor = Color.FromArgb(10, 8, 18)
+        };
+        Panel pnlMainContent = new Panel
+        {
+            Location = new Point(sidebarWidth, headerHeight),
+            Size = new Size(contentWidth, this.ClientSize.Height - headerHeight),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.FromArgb(12, 10, 24),
+            AutoScroll = true,
+            AutoScrollMinSize = new Size(0, 1080)
+        };
+
+        // ══════════════════════════════════════════════════════════
+        // 1. HEADER BAR — Widget Musique & Contrôles Fenêtre
+        // ══════════════════════════════════════════════════════════
+        Panel pnlHeader = new Panel
+        {
+            Location = new Point(sidebarWidth, 0),
+            Size = new Size(contentWidth, headerHeight),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.FromArgb(10, 8, 18),
+            Padding = new Padding(0)
+        };
+        MakeDraggable(pnlHeader);
+
+        // ── Widget musique style Spotify (identique à la photo de référence) ──
+        Panel pnlSoundWidget = new Panel
+        {
+            Location = new Point(20, 7),
+            Size = new Size(500, 48),
+            BackColor = Color.Transparent,
+        };
+        MakeDraggable(pnlSoundWidget);
+
+        // Pochette album avec coins arrondis
+        pbSoundArt = new PictureBox
+        {
+            Size = new Size(40, 40),
+            Location = new Point(2, 4),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent
+        };
+        pbSoundArt.Image = CreateDefaultSoundIcon();
+
+        // Titre de musique (blanc pur, gras, style Spotify)
+        lblSoundTitle = new Label
+        {
+            Text = "Son en écoute",
+            Location = new Point(48, 6),
+            Size = new Size(160, 18),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI Variable Text", 9.5f, FontStyle.Bold),
+            AutoEllipsis = true,
+            BackColor = Color.Transparent
+        };
+        MakeDraggable(lblSoundTitle);
+
+        // Artiste / Source (gris clair discret, style Spotify)
+        lblSoundArtist = new Label
+        {
+            Text = "Sortie Casque / Sonar",
+            Location = new Point(48, 25),
+            Size = new Size(160, 16),
+            ForeColor = Color.FromArgb(170, 170, 170),
+            Font = new Font("Segoe UI Variable Text", 8.2f, FontStyle.Regular),
+            AutoEllipsis = true,
+            BackColor = Color.Transparent
+        };
+        MakeDraggable(lblSoundArtist);
+
+        // Label source (ex: "via Spotify") en violet discret au lieu de l'icône verte
+        lblSoundSource = new Label
+        {
+            Text = "via Média",
+            Location = new Point(216, 16),
+            Size = new Size(80, 16),
+            ForeColor = Color.FromArgb(140, 120, 190),
+            Font = new Font("Segoe UI Variable Text", 7.5f, FontStyle.Italic),
+            AutoEllipsis = true,
+            BackColor = Color.Transparent
+        };
+        MakeDraggable(lblSoundSource);
+
+        // Bouton Précédent (triangle + barre discret)
+        btnSpotifyPrev = new SpotifyTrackButton
+        {
+            ButtonType = SpotifyTrackButtonType.Previous,
+            Location = new Point(300, 10),
+            Size = new Size(28, 28)
+        };
+        btnSpotifyPrev.Click += async (s, e) =>
+        {
+            await audioTracker.SkipPreviousAsync();
+            SendMediaKey(NativeMethods.APPCOMMAND_MEDIA_PREVIOUSTRACK);
+        };
+
+        // Bouton Play/Pause (Cercle blanc pur, 2 barres noires de pause ou triangle noir)
+        btnSpotifyPlayPause = new SpotifyPlayPauseButton
+        {
+            Location = new Point(334, 7),
+            Size = new Size(34, 34),
+            IsPlaying = true
+        };
+        btnSpotifyPlayPause.Click += async (s, e) =>
+        {
+            await audioTracker.TogglePlayPauseAsync();
+            SendMediaKey(NativeMethods.APPCOMMAND_MEDIA_PLAY_PAUSE);
+            btnSpotifyPlayPause.IsPlaying = !btnSpotifyPlayPause.IsPlaying;
+        };
+
+        // Bouton Suivant (triangle + barre discret, comme sur la photo)
+        btnSpotifyNext = new SpotifyTrackButton
+        {
+            ButtonType = SpotifyTrackButtonType.Next,
+            Location = new Point(374, 10),
+            Size = new Size(28, 28)
+        };
+        btnSpotifyNext.Click += async (s, e) =>
+        {
+            await audioTracker.SkipNextAsync();
+            SendMediaKey(NativeMethods.APPCOMMAND_MEDIA_NEXTTRACK);
+        };
+
+        pnlSoundWidget.Controls.Add(pbSoundArt);
+        pnlSoundWidget.Controls.Add(lblSoundTitle);
+        pnlSoundWidget.Controls.Add(lblSoundArtist);
+        pnlSoundWidget.Controls.Add(lblSoundSource);
+        pnlSoundWidget.Controls.Add(btnSpotifyPrev);
+        pnlSoundWidget.Controls.Add(btnSpotifyPlayPause);
+        pnlSoundWidget.Controls.Add(btnSpotifyNext);
+        pnlHeader.Controls.Add(pnlSoundWidget);
+
+        // ── Boutons fenêtre (─ ✕) circulaires à droite ────────────
+        var btnMinimize = new ModernCircleButton
+        {
+            IconText = "─",
+            Size = new Size(28, 28),
+            Location = new Point(pnlHeader.ClientSize.Width - 108, 18),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            NormalBg = Color.FromArgb(28, 22, 48),
+            HoverBg = Color.FromArgb(52, 42, 82),
+            NormalFg = Color.FromArgb(190, 180, 220),
+            HoverFg = Color.White
+        };
+        btnMinimize.Click += (s, e) => this.WindowState = FormWindowState.Minimized;
+
+        var btnMaximize = new ModernCircleButton
+        {
+            IconText = "□",
+            Size = new Size(28, 28),
+            Location = new Point(pnlHeader.ClientSize.Width - 73, 18),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            NormalBg = Color.FromArgb(28, 22, 48),
+            HoverBg = Color.FromArgb(52, 42, 82),
+            NormalFg = Color.FromArgb(190, 180, 220),
+            HoverFg = Color.White
+        };
+        btnMaximize.Click += (s, e) => this.WindowState = this.WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+
+        var btnClose = new ModernCircleButton
+        {
+            IconText = "✕",
+            Size = new Size(28, 28),
+            Location = new Point(pnlHeader.ClientSize.Width - 38, 18),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            IsDestructive = true,
+            NormalBg = Color.FromArgb(28, 22, 48),
+            NormalFg = Color.FromArgb(190, 180, 220)
+        };
+        btnClose.Click += (s, e) =>
+        {
+            this.Hide();
+        };
+
+        pnlHeader.Controls.Add(btnMinimize);
+        pnlHeader.Controls.Add(btnMaximize);
+        pnlHeader.Controls.Add(btnClose);
+
+        // ══════════════════════════════════════════════════════════
+        // 2. Status Banner
+        // ══════════════════════════════════════════════════════════
+        Label lblPageEyebrow = new Label
+        {
+            Text = "GESTIONNAIRE DES TÂCHES",
+            Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(181, 168, 211),
+            Location = new Point(24, 16),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        Label lblPageTitle = new Label
+        {
+            Text = "Surveillance du PC",
+            Font = new Font("Segoe UI Variable Display", 21f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(245, 243, 255),
+            Location = new Point(24, 34),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        pnlMainContent.Controls.Add(lblPageEyebrow);
+        pnlMainContent.Controls.Add(lblPageTitle);
+
+        pnlStatusBanner = new ModernCard
+        {
+            Location = new Point(24, 84),
+            Size = new Size(contentWidth - 48, 64),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BorderRadius = 12,
+            FillColor = Color.FromArgb(22, 17, 44),
+            BorderColor = Color.FromArgb(60, 48, 105),
+            Padding = new Padding(15)
+        };
+
+        lblStatusHeader = new Label
+        {
+            Text = "🟣 EN VEILLE • PRÊT POUR LE JEU",
+            Font = new Font("Segoe UI Variable Display", 12f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(192, 132, 252),
+            AutoSize = true,
+            Location = new Point(16, 22),
+            BackColor = Color.Transparent
+        };
+
+
+        var btnOptimizationAdvisor = CreateVioletActionButton(
+            "🛠 Optimisations",
+            Color.FromArgb(109, 40, 217),
+            new Point(contentWidth - 204, 14),
+            140,
+            (s, e) => OpenOptimizationAdvisor());
+        btnOptimizationAdvisor.Size = new Size(140, 36);
+        btnOptimizationAdvisor.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        btnOptimizationAdvisor.Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold);
+
+        pnlStatusBanner.Controls.Add(lblStatusHeader);
+        pnlStatusBanner.Controls.Add(btnOptimizationAdvisor);
+        pnlMainContent.Controls.Add(pnlStatusBanner);
+
+        // ══════════════════════════════════════════════════════════
+
+        hardwareGraph = new HardwareGraphControl
+        {
+            Title = "Ressources système",
+            Dock = DockStyle.Fill
+        };
+        hardwareGraph.MetricsUpdated += (s, e) => UpdateHardwareMetrics();
+
+        Panel pnlHardwareMetrics = new Panel
+        {
+            Location = new Point(24, 164),
+            Size = new Size(contentWidth - 48, 116),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+        ModernCard cpuCard = CreateResourceMetricCard("PROCESSEUR · CPU", "…", "EN DIRECT", Color.FromArgb(124, 58, 237), true, out lblCpuValue, out pnlCpuProgressTrack, out pnlCpuProgressFill);
+        ModernCard ramCard = CreateResourceMetricCard("MÉMOIRE · RAM", "…", "EN DIRECT", Color.FromArgb(168, 85, 247), true, out lblRamValue, out pnlRamProgressTrack, out pnlRamProgressFill);
+        ModernCard gpuCard = CreateResourceMetricCard("CARTE GRAPHIQUE · GPU", "N/D", "INDISPONIBLE", Color.FromArgb(192, 132, 252), false, out lblGpuValue, out _, out _);
+
+        void LayoutHardwareCards()
+        {
+            int gap = 16;
+            int cardWidth = (pnlHardwareMetrics.ClientSize.Width - gap * 2) / 3;
+            cpuCard.Location = new Point(0, 0);
+            ramCard.Location = new Point(cardWidth + gap, 0);
+            gpuCard.Location = new Point((cardWidth + gap) * 2, 0);
+            cpuCard.Size = ramCard.Size = gpuCard.Size = new Size(cardWidth, 116);
+        }
+        pnlHardwareMetrics.Resize += (s, e) => LayoutHardwareCards();
+        LayoutHardwareCards();
+        pnlHardwareMetrics.Controls.Add(cpuCard);
+        pnlHardwareMetrics.Controls.Add(ramCard);
+        pnlHardwareMetrics.Controls.Add(gpuCard);
+        pnlMainContent.Controls.Add(pnlHardwareMetrics);
+        UpdateHardwareMetrics();
+
+        // 3. Hardware Graph Container
+        // ══════════════════════════════════════════════════════════
+        ModernCard pnlGraphContainer = new ModernCard
+        {
+            Location = new Point(24, 382),
+            Size = new Size(contentWidth - 48, 268),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BorderRadius = 12,
+            FillColor = Color.FromArgb(14, 12, 28),
+            BorderColor = Color.FromArgb(44, 34, 76),
+            Padding = new Padding(5)
+        };
+
+        // Pills CPU / RAM / GPU / APPS
+        Panel pnlPills = new Panel
+        {
+            Location = new Point(pnlGraphContainer.ClientSize.Width - 322, 8),
+            Size = new Size(310, 34),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+
+        btnGraphCpu = CreateVioletPillButton("CPU", new Point(2, 2), 70, true);
+        btnGraphRam = CreateVioletPillButton("RAM", new Point(75, 2), 70, false);
+        btnGraphGpu = CreateVioletPillButton("GPU", new Point(148, 2), 70, false);
+        btnGraphApps = CreateVioletPillButton("APPS", new Point(221, 2), 78, false);
+
+        btnGraphCpu.Click += (s, e) => SwitchGraphMode("CPU");
+        btnGraphRam.Click += (s, e) => SwitchGraphMode("RAM");
+        btnGraphGpu.Click += (s, e) => SwitchGraphMode("GPU");
+        btnGraphApps.Click += (s, e) => SwitchGraphMode("APPS");
+
+        pnlPills.Controls.Add(btnGraphCpu);
+        pnlPills.Controls.Add(btnGraphRam);
+        pnlPills.Controls.Add(btnGraphGpu);
+        pnlPills.Controls.Add(btnGraphApps);
+        pnlGraphContainer.Controls.Add(hardwareGraph);
+        pnlGraphContainer.Controls.Add(pnlPills);
+        pnlPills.BringToFront();
+        pnlMainContent.Controls.Add(pnlGraphContainer);
+
+        Panel pnlSummaryRow = new Panel
+        {
+            Location = new Point(24, 294),
+            Size = new Size(contentWidth - 48, 72),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+        int summaryGap = 16;
+        int summaryCardWidth = (pnlSummaryRow.ClientSize.Width - summaryGap * 2) / 3;
+        ModernCard pnlCard1 = CreateMetricCard("APPS EN MODE ÉCO", "0 apps", Color.FromArgb(192, 132, 252), new Point(0, 0), summaryCardWidth, 72, out lblEcoCount);
+        ModernCard pnlCard2 = CreateMetricCard("JEU EN COURS", "En attente...", Color.FromArgb(168, 85, 247), new Point(summaryCardWidth + summaryGap, 0), summaryCardWidth, 72, out lblActiveGame);
+        ModernCard pnlCard3 = CreateMetricCard("ANGLE SNAPPING", "DÉSACTIVÉ", Color.FromArgb(216, 180, 254), new Point((summaryCardWidth + summaryGap) * 2, 0), summaryCardWidth, 72, out lblAngleStatus);
+        void LayoutSummaryCards()
+        {
+            summaryCardWidth = (pnlSummaryRow.ClientSize.Width - summaryGap * 2) / 3;
+            pnlCard1.Location = new Point(0, 0);
+            pnlCard2.Location = new Point(summaryCardWidth + summaryGap, 0);
+            pnlCard3.Location = new Point((summaryCardWidth + summaryGap) * 2, 0);
+            pnlCard1.Size = pnlCard2.Size = pnlCard3.Size = new Size(summaryCardWidth, 72);
+        }
+        pnlSummaryRow.Resize += (s, e) => LayoutSummaryCards();
+        LayoutSummaryCards();
+        pnlSummaryRow.Controls.Add(pnlCard1);
+        pnlSummaryRow.Controls.Add(pnlCard2);
+        pnlSummaryRow.Controls.Add(pnlCard3);
+        pnlMainContent.Controls.Add(pnlSummaryRow);
+
+        // ══════════════════════════════════════════════════════════
+        // 5. Action Buttons (Boutons modernes avec micro-interactions)
+        // ══════════════════════════════════════════════════════════
+        Panel pnlActionsRow = new Panel
+        {
+            Location = new Point(24, 670),
+            Size = new Size(contentWidth - 48, 44),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+        int actionGap = 14;
+        int actBtnW = (pnlActionsRow.ClientSize.Width - actionGap * 3) / 4;
+
+        btnSearchGames = CreateVioletActionButton("🔍 Recherche de jeu", Color.FromArgb(109, 40, 217), new Point(0, 0), actBtnW, async (s, e) =>
+        {
+            btnSearchGames.Enabled = false;
+            btnSearchGames.Text = "⏳ Scan IA...";
+            int total = await intelligenceService.BoostIntelligenceAsync();
+            btnSearchGames.Text = $"✅ {total} jeux trouvés";
+            await Task.Delay(2500);
+            btnSearchGames.Text = "🔍 Recherche de jeu";
+            btnSearchGames.Enabled = true;
+        });
+
+        btnToggleEco = CreateVioletActionButton("🟣 Mode Éco", Color.FromArgb(124, 58, 237), new Point(actBtnW + actionGap, 0), actBtnW, BtnToggleEco_Click);
+        btnCleanRam = CreateVioletActionButton("🧹 Vider la RAM", Color.FromArgb(139, 92, 246), new Point((actBtnW + actionGap) * 2, 0), actBtnW, BtnCleanRam_Click);
+        btnToggleAngleSnapping = CreateVioletActionButton("🎯 Angle Snapping [F8]", Color.FromArgb(76, 29, 149), new Point((actBtnW + actionGap) * 3, 0), actBtnW, (s, e) => ToggleAngleSnapping());
+
+        void LayoutActionButtons()
+        {
+            actBtnW = (pnlActionsRow.ClientSize.Width - actionGap * 3) / 4;
+            btnSearchGames.Location = new Point(0, 0);
+            btnToggleEco.Location = new Point(actBtnW + actionGap, 0);
+            btnCleanRam.Location = new Point((actBtnW + actionGap) * 2, 0);
+            btnToggleAngleSnapping.Location = new Point((actBtnW + actionGap) * 3, 0);
+            btnSearchGames.Size = btnToggleEco.Size = btnCleanRam.Size = btnToggleAngleSnapping.Size = new Size(actBtnW, 42);
+        }
+        pnlActionsRow.Resize += (s, e) => LayoutActionButtons();
+        LayoutActionButtons();
+        pnlActionsRow.Controls.Add(btnSearchGames);
+        pnlActionsRow.Controls.Add(btnToggleEco);
+        pnlActionsRow.Controls.Add(btnCleanRam);
+        pnlActionsRow.Controls.Add(btnToggleAngleSnapping);
+        pnlMainContent.Controls.Add(pnlActionsRow);
+
+        // ══════════════════════════════════════════════════════════
+        // 6. Section Angle Snapping avec Curseur Moderne
+        // ══════════════════════════════════════════════════════════
+        ModernCard pnlSnappingSettings = new ModernCard
+        {
+            Location = new Point(24, 728),
+            Size = new Size(contentWidth - 48, 62),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BorderRadius = 10,
+            FillColor = Color.FromArgb(20, 16, 40),
+            BorderColor = Color.FromArgb(52, 42, 90),
+            Padding = new Padding(10)
+        };
+
+        chkAngleSnapping = new ModernToggleSwitch
+        {
+            Title = "🎯 Angle Snapping [F8]",
+            Checked = false,
+            Location = new Point(12, 9),
+            Size = new Size(320, 36)
+        };
+        chkAngleSnapping.CheckedChanged += (s, e) =>
+        {
+            if (chkAngleSnapping.Checked != isAngleSnappingActive) ToggleAngleSnapping();
+        };
+
+        Label lblSliderTitle = new Label
+        {
+            Text = "Force :",
+            Location = new Point(340, 18),
+            AutoSize = true,
+            ForeColor = Color.FromArgb(175, 165, 215),
+            Font = new Font("Segoe UI Variable Text", 9f),
+            BackColor = Color.Transparent
+        };
+
+        lblAnglePercentValue = new Label
+        {
+            Text = "100%",
+            Location = new Point(415, 16),
+            AutoSize = true,
+            ForeColor = Color.FromArgb(216, 180, 254),
+            Font = new Font("Segoe UI Variable Display", 10.5f, FontStyle.Bold),
+            BackColor = Color.Transparent
+        };
+
+        tbAngleSnapping = new ModernSlider
+        {
+            Location = new Point(470, 18),
+            Size = new Size(pnlSnappingSettings.ClientSize.Width - 490, 26),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Minimum = 5,
+            Maximum = 100,
+            Value = 100
+        };
+        tbAngleSnapping.ValueChanged += (s, e) =>
+        {
+            angleSnappingPercent = tbAngleSnapping.Value;
+            lblAnglePercentValue.Text = $"{angleSnappingPercent}%";
+            if (isAngleSnappingActive)
+            {
+                lblAngleStatus.Text = $"{angleSnappingPercent}% ACTIF";
+                btnToggleAngleSnapping.Text = $"🎯 Snapping ({angleSnappingPercent}%)";
+            }
+        };
+
+        pnlSnappingSettings.Controls.Add(chkAngleSnapping);
+        pnlSnappingSettings.Controls.Add(lblSliderTitle);
+        pnlSnappingSettings.Controls.Add(lblAnglePercentValue);
+        pnlSnappingSettings.Controls.Add(tbAngleSnapping);
+        pnlMainContent.Controls.Add(pnlSnappingSettings);
+
+        // ══════════════════════════════════════════════════════════
+        // 7. Automatisation & No Delay Souris (Interrupteurs simplifiés)
+        //    Boost IA + Réseau NoDelay : toujours actifs, pas de toggle UI
+        // ══════════════════════════════════════════════════════════
+        ModernCard pnlAutoSettings = new ModernCard
+        {
+            Location = new Point(24, 806),
+            Size = new Size(contentWidth - 48, 96),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BorderRadius = 10,
+            FillColor = Color.FromArgb(17, 14, 36),
+            BorderColor = Color.FromArgb(46, 36, 80),
+            Padding = new Padding(8)
+        };
+
+        chkAutoDetect = new ModernToggleSwitch
+        {
+            Title = "🟣 Mode Éco Automatique",
+            Checked = true,
+            Location = new Point(12, 6),
+            Size = new Size(370, 34)
+        };
+
+        chkMouseNoDelay = new ModernToggleSwitch
+        {
+            Title = "🟣 Souris No Delay (0ms)",
+            Checked = true,
+            Location = new Point(480, 8),
+            Size = new Size(pnlAutoSettings.ClientSize.Width - 500, 34),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+        chkMouseNoDelay.CheckedChanged += (s, e) =>
+        {
+            NativeMethods.EnableMouseNoDelay(chkMouseNoDelay.Checked);
+            Log(chkMouseNoDelay.Checked
+                ? "🟣 NO DELAY SOURIS ACTIVÉ (Timer 1ms + Suivi 1:1 Raw)."
+                : "ℹ️ No Delay Souris désactivé.");
+        };
+
+        chkRunAtStartup = new ModernToggleSwitch
+        {
+            Title = "🚀 Démarrer avec Windows",
+            Checked = CheckStartupConfig(),
+            Location = new Point(12, 50),
+            Size = new Size(420, 34)
+        };
+        chkRunAtStartup.CheckedChanged += ChkRunAtStartup_CheckedChanged;
+
+        chkAutoTurbo = new ModernToggleSwitch
+        {
+            Title = "Turbo CPU en jeu",
+            Checked = true,
+            Location = new Point(480, 50),
+            Size = new Size(pnlAutoSettings.ClientSize.Width - 500, 34),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+        chkAutoTurbo.CheckedChanged += (s, e) =>
+        {
+            if (chkAutoTurbo.Checked)
+            {
+                if (isGameActive)
+                {
+                    bool activated = NativeMethods.SetUltimateGamingPowerPlan(true);
+                    lblStatusHeader.Text = $"🔥 MODE JEU ACTIF • {activeGameName.ToUpper()}";
+                    lblStatusHeader.ForeColor = Color.FromArgb(216, 180, 254);
+                    Log(activated ? $"⚡ Plan de jeu activé pour {activeGameName}." : "⚠️ Windows n'a pas pu activer le plan de jeu.");
+                }
+                else
+                {
+                    Log("⚡ Turbo CPU activé uniquement pendant les jeux détectés.");
+                }
+            }
+            else
+            {
+                bool restored = NativeMethods.RestoreNormalPowerPlan();
+                Log(restored ? "ℹ️ Turbo CPU en jeu désactivé; plan normal restauré." : "⚠️ Windows n'a pas pu restaurer le plan normal.");
+                if (isGameActive)
+                {
+                    lblStatusHeader.Text = $"🎮 {activeGameName.ToUpper()} • CPU NORMAL";
+                    lblStatusHeader.ForeColor = Color.FromArgb(181, 168, 211);
+                }
+            }
+        };
+
+        pnlAutoSettings.Controls.Add(chkAutoDetect);
+        pnlAutoSettings.Controls.Add(chkMouseNoDelay);
+        pnlAutoSettings.Controls.Add(chkRunAtStartup);
+        pnlAutoSettings.Controls.Add(chkAutoTurbo);
+        pnlMainContent.Controls.Add(pnlAutoSettings);
+
+        // ══════════════════════════════════════════════════════════
+        // 8. Activity Log Box (Console Terminal Sombre)
+        // ══════════════════════════════════════════════════════════
+        ModernCard pnlLogCard = new ModernCard
+        {
+            Location = new Point(24, 922),
+            Size = new Size(contentWidth - 48, 146),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BorderRadius = 10,
+            FillColor = Color.FromArgb(10, 8, 20),
+            BorderColor = Color.FromArgb(40, 32, 70),
+            Padding = new Padding(10)
+        };
+
+        Label lblLogTitle = new Label
+        {
+            Text = "● CONSOLE D'ACTIVITE & EVENEMENTS IA",
+            Font = new Font("Segoe UI Variable Text", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(168, 145, 215),
+            Location = new Point(14, 6),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        pnlLogCard.Controls.Add(lblLogTitle);
+
+        rtbLogs = new RichTextBox
+        {
+            Location = new Point(14, 24),
+            Size = new Size(pnlLogCard.ClientSize.Width - 28, pnlLogCard.ClientSize.Height - 34),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.FromArgb(10, 8, 20),
+            ForeColor = Color.FromArgb(216, 180, 254),
+            BorderStyle = BorderStyle.None,
+            Font = new Font("Consolas", 9f),
+            ReadOnly = true
+        };
+        pnlLogCard.Controls.Add(rtbLogs);
+        pnlMainContent.Controls.Add(pnlLogCard);
+
+        Label lblBrand = new Label
+        {
+            Text = "GameEcoBot",
+            Location = new Point(68, 28),
+            Size = new Size(136, 20),
+            Font = new Font("Segoe UI Variable Display", 11f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(245, 243, 255),
+            BackColor = Color.Transparent
+        };
+        ModernCard brandMark = new ModernCard
+        {
+            Location = new Point(18, 18),
+            Size = new Size(40, 40),
+            BorderRadius = 12,
+            FillColor = Color.FromArgb(124, 58, 237),
+            BorderColor = Color.FromArgb(168, 85, 247)
+        };
+        Label brandGlyph = new Label
+        {
+            Text = "G",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI Variable Display", 16f, FontStyle.Bold),
+            ForeColor = Color.White,
+            BackColor = Color.Transparent
+        };
+        brandMark.Controls.Add(brandGlyph);
+        pnlSidebar.Controls.Add(brandMark);
+        pnlSidebar.Controls.Add(lblBrand);
+
+        Label lblTools = new Label
+        {
+            Text = "OUTILS",
+            Location = new Point(20, 88),
+            AutoSize = true,
+            Font = new Font("Segoe UI Variable Text", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(137, 122, 173),
+            BackColor = Color.Transparent
+        };
+        pnlSidebar.Controls.Add(lblTools);
+        var btnSidebarAdvisor = CreateVioletActionButton("Optimisations IA", Color.FromArgb(109, 40, 217), new Point(16, 112), sidebarWidth - 32, (s, e) => OpenOptimizationAdvisor());
+        btnSidebarAdvisor.Font = new Font("Segoe UI Variable Text", 8.5f, FontStyle.Bold);
+        pnlSidebar.Controls.Add(btnSidebarAdvisor);
+
+        Panel sidebarDivider = new Panel
+        {
+            Location = new Point(sidebarWidth - 1, 0),
+            Size = new Size(1, this.ClientSize.Height),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right,
+            BackColor = Color.FromArgb(60, 48, 105)
+        };
+        pnlSidebar.Controls.Add(sidebarDivider);
+
+        Panel headerDivider = new Panel
+        {
+            Location = new Point(0, headerHeight - 1),
+            Size = new Size(pnlHeader.ClientSize.Width, 1),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.FromArgb(60, 48, 105)
+        };
+        pnlHeader.Controls.Add(headerDivider);
+
+        this.Controls.Add(pnlMainContent);
+        this.Controls.Add(pnlSidebar);
+        this.Controls.Add(pnlHeader);
+        this.FormClosing += Form1_FormClosing;
+    }
+
+    // ── Helper : rendre un controle draggable pour deplacer la fenetre ──
+    private Point _dragStart;
+    private void MakeDraggable(Control ctrl)
+    {
+        ctrl.MouseDown += (s, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+                _dragStart = e.Location;
+        };
+        ctrl.MouseMove += (s, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                this.Left += e.X - _dragStart.X;
+                this.Top += e.Y - _dragStart.Y;
+            }
+        };
+    }
+
+    // ── Envoyer une commande media Windows ──
+    private void SendMediaKey(int command)
+    {
+        NativeMethods.SendMediaCommand(this.Handle, command);
+    }
+
+    private void UpdateSoundUi()
+    {
+        lblSoundTitle.Text = string.IsNullOrWhiteSpace(audioTracker.CurrentTitle) ? "Aucune lecture" : audioTracker.CurrentTitle;
+        lblSoundArtist.Text = string.IsNullOrWhiteSpace(audioTracker.CurrentArtist) ? "Spotify / Windows" : audioTracker.CurrentArtist;
+        lblSoundSource.Text = audioTracker.CurrentSource;
+        if (btnSpotifyPlayPause != null)
+        {
+            btnSpotifyPlayPause.IsPlaying = audioTracker.IsPlaying;
+        }
+        if (audioTracker.CurrentThumbnail != null)
+        {
+            pbSoundArt.Image = audioTracker.CurrentThumbnail;
+        }
+        else
+        {
+            pbSoundArt.Image = CreateDefaultSoundIcon();
+        }
+    }
+
+    private Image CreateDefaultSoundIcon()
+    {
+        Bitmap bmp = new Bitmap(44, 44);
+        using Graphics g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Color.Transparent);
+
+        using (GraphicsPath path = ModernCard.CreateRoundedRectangle(new Rectangle(0, 0, 43, 43), 8))
+        {
+            using (Brush brush = new SolidBrush(Color.FromArgb(40, 32, 68)))
+            {
+                g.FillPath(brush, path);
+            }
+            using (Pen pen = new Pen(Color.FromArgb(70, 56, 115), 1f))
+            {
+                g.DrawPath(pen, path);
+            }
+        }
+
+        using (Brush brush = new SolidBrush(Color.FromArgb(216, 180, 254)))
+        {
+            using Font font = new Font("Segoe UI", 13f);
+            g.DrawString("🎧", font, brush, new PointF(7, 7));
+        }
+        return bmp;
+    }
+
+    private ModernButton CreateVioletPillButton(string text, Point location, int width, bool active)
+    {
+        var btn = new ModernButton
+        {
+            Text = text,
+            Location = location,
+            Size = new Size(width, 30),
+            BorderRadius = 8,
+            HasBorder = false,
+            NormalColor = active ? Color.FromArgb(124, 58, 237) : Color.Transparent,
+            HoverColor = active ? Color.FromArgb(139, 92, 246) : Color.FromArgb(36, 30, 60),
+            PressedColor = Color.FromArgb(109, 40, 217),
+            ForeColor = active ? Color.White : Color.FromArgb(170, 155, 205),
+            Font = new Font("Segoe UI Variable Display", 9f, FontStyle.Bold)
+        };
+        return btn;
+    }
+
+    private void SwitchGraphMode(string mode)
+    {
+        // Couleur active unique violet pour tous les boutons pill
+        Color activeBg = Color.FromArgb(124, 58, 237);
+        Color inactiveBg = Color.Transparent;
+        Color activeFg = Color.White;
+        Color inactiveFg = Color.FromArgb(170, 155, 205);
+
+        btnGraphCpu.NormalColor = mode == "CPU" ? activeBg : inactiveBg;
+        btnGraphCpu.ForeColor = mode == "CPU" ? activeFg : inactiveFg;
+
+        btnGraphRam.NormalColor = mode == "RAM" ? activeBg : inactiveBg;
+        btnGraphRam.ForeColor = mode == "RAM" ? activeFg : inactiveFg;
+
+        btnGraphGpu.NormalColor = mode == "GPU" ? activeBg : inactiveBg;
+        btnGraphGpu.ForeColor = mode == "GPU" ? activeFg : inactiveFg;
+
+        btnGraphApps.NormalColor = mode == "APPS" ? activeBg : inactiveBg;
+        btnGraphApps.ForeColor = mode == "APPS" ? activeFg : inactiveFg;
+
+        hardwareGraph.SetMode(mode);
+    }
+
+    private ModernButton CreateVioletActionButton(string text, Color bg, Point location, int width, EventHandler handler)
+    {
+        var btn = new ModernButton
+        {
+            Text = text,
+            Size = new Size(width, 42),
+            Location = location,
+            BorderRadius = 10,
+            HasBorder = true,
+            NormalColor = bg,
+            HoverColor = ControlPaint.Light(bg, 0.2f),
+            PressedColor = ControlPaint.Dark(bg, 0.2f),
+            BorderColor = ControlPaint.Light(bg, 0.35f),
+            ForeColor = Color.White
+        };
+        btn.Click += handler;
+        return btn;
+    }
+
+    private ModernCard CreateMetricCard(string label, string defaultValue, Color accentColor, Point location, int width, int height, out Label valLabel)
+    {
+        ModernCard card = new ModernCard
+        {
+            Location = location,
+            Size = new Size(width, height),
+            BorderRadius = 12,
+            FillColor = Color.FromArgb(22, 17, 44),
+            BorderColor = Color.FromArgb(60, 48, 105),
+            Padding = new Padding(14, 8, 14, 8)
+        };
+
+        Label lbl = new Label
+        {
+            Text = label,
+            Font = new Font("Segoe UI Variable Text", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(181, 168, 211),
+            Location = new Point(12, 10),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+
+        valLabel = new Label
+        {
+            Text = defaultValue,
+            Font = new Font("Segoe UI Variable Display", 13f, FontStyle.Bold),
+            ForeColor = accentColor,
+            Location = new Point(12, 32),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+
+        card.Controls.Add(lbl);
+        card.Controls.Add(valLabel);
+        return card;
+    }
+
+    private ModernCard CreateResourceMetricCard(string title, string initialValue, string status, Color accent, bool showProgress, out Label valueLabel, out Panel? progressTrack, out Panel? progressFill)
+    {
+        ModernCard card = new ModernCard
+        {
+            Location = Point.Empty,
+            Size = new Size(320, 116),
+            BorderRadius = 12,
+            FillColor = Color.FromArgb(22, 17, 44),
+            BorderColor = Color.FromArgb(60, 48, 105),
+            Padding = new Padding(16, 10, 16, 10)
+        };
+        Label eyebrow = new Label
+        {
+            Text = "MESURE SYSTÈME",
+            Font = new Font("Segoe UI Variable Text", 7.5f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(181, 168, 211),
+            Location = new Point(16, 10),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        Label titleLabel = new Label
+        {
+            Text = title,
+            Font = new Font("Segoe UI Variable Text", 9f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(245, 243, 255),
+            Location = new Point(16, 29),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        valueLabel = new Label
+        {
+            Text = initialValue,
+            Font = new Font("Segoe UI Variable Display", 24f, FontStyle.Bold),
+            ForeColor = accent,
+            Location = new Point(16, 49),
+            AutoSize = true,
+            BackColor = Color.Transparent
+        };
+        Label statusLabel = new Label
+        {
+            Text = status,
+            Font = new Font("Segoe UI Variable Text", 7.2f, FontStyle.Bold),
+            ForeColor = accent,
+            Location = new Point(card.Width - 100, 16),
+            AutoSize = true,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            BackColor = Color.Transparent
+        };
+        card.Controls.Add(eyebrow);
+        card.Controls.Add(titleLabel);
+        card.Controls.Add(valueLabel);
+        card.Controls.Add(statusLabel);
+        progressTrack = null;
+        progressFill = null;
+        if (showProgress)
+        {
+            Panel track = new Panel
+            {
+                Location = new Point(16, 96),
+                Size = new Size(card.Width - 32, 5),
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                BackColor = Color.FromArgb(60, 48, 105),
+                Tag = 0f
+            };
+            Panel fill = new Panel
+            {
+                Location = Point.Empty,
+                Size = new Size(0, 5),
+                BackColor = accent
+            };
+            track.Controls.Add(fill);
+            track.Resize += (s, e) =>
+            {
+                float percent = track.Tag is float current ? current : 0f;
+                fill.Width = Math.Clamp((int)Math.Round(track.ClientSize.Width * percent / 100f), 0, track.ClientSize.Width);
+            };
+            card.Controls.Add(track);
+            progressTrack = track;
+            progressFill = fill;
+        }
+        return card;
+    }
+
+    private void UpdateHardwareMetrics()
+    {
+        if (hardwareGraph == null || lblCpuValue == null || lblRamValue == null || pnlCpuProgressTrack == null || pnlCpuProgressFill == null || pnlRamProgressTrack == null || pnlRamProgressFill == null)
+            return;
+        float? cpu = hardwareGraph.CpuUsage;
+        float ram = Math.Clamp(hardwareGraph.RamUsage, 0f, 100f);
+        lblCpuValue.Text = cpu.HasValue ? $"{cpu.Value:0}%" : "N/D";
+        lblRamValue.Text = $"{ram:0}%";
+        lblGpuValue.Text = "N/D";
+        SetMetricProgress(pnlCpuProgressTrack!, pnlCpuProgressFill!, cpu ?? 0f);
+        SetMetricProgress(pnlRamProgressTrack!, pnlRamProgressFill!, ram);
+    }
+
+    private static void SetMetricProgress(Panel track, Panel fill, float value)
+    {
+        float percent = Math.Clamp(value, 0f, 100f);
+        track.Tag = percent;
+        fill.Width = Math.Clamp((int)Math.Round(track.ClientSize.Width * percent / 100f), 0, track.ClientSize.Width);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        using var pen = new Pen(Color.FromArgb(48, 38, 80), 1f);
+        e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+    }
+
+    private void SetupTray()
+    {
+        trayMenu = new ContextMenuStrip();
+        trayMenu.Items.Add("🟣 Afficher GameEcoBot", null, (s, e) => ShowAndRestore());
+        trayMenu.Items.Add("🛠 Assistant d'optimisation", null, (s, e) => OpenOptimizationAdvisor());
+        trayMenu.Items.Add("🔍 Recherche de jeu", null, async (s, e) => await intelligenceService.BoostIntelligenceAsync());
+        trayMenu.Items.Add("🎯 Basculer Angle Snapping (F8)", null, (s, e) => ToggleAngleSnapping());
+        trayMenu.Items.Add("🟣 Activer/Désactiver Mode Éco", null, (s, e) => BtnToggleEco_Click(s, e));
+        trayMenu.Items.Add("🧹 Purger la RAM", null, (s, e) => BtnCleanRam_Click(s, e));
+        trayMenu.Items.Add("-");
+        trayMenu.Items.Add("Quitter complètement", null, (s, e) => ExitApp());
+
+        trayIcon = new NotifyIcon
+        {
+            Text = "GameEcoBot - Violet Edition",
+            Icon = CreateVioletAppIcon(),
+            ContextMenuStrip = trayMenu,
+            Visible = true
+        };
+        trayIcon.DoubleClick += (s, e) => ShowAndRestore();
+    }
+
+    private void OpenOptimizationAdvisor()
+    {
+        using var advisor = new OptimizationAdvisorForm();
+        advisor.ShowDialog(this);
+    }
+
+    #region Angle Snapping 100% Ultra-Agressif
+
+    private void SetupAngleSnappingHook()
+    {
+        NativeMethods.RegisterHotKey(this.Handle, HOTKEY_ID_F8, 0, 0x77);
+        // Le hook WH_MOUSE_LL est attaché UNIQUEMENT à la demande pour garantir 0ms d'overhead quand inactif
+    }
+
+    public void ToggleAngleSnapping()
+    {
+        isAngleSnappingActive = !isAngleSnappingActive;
+        hasLastMousePos = false;
+
+        if (chkAngleSnapping != null) chkAngleSnapping.Checked = isAngleSnappingActive;
+
+        if (isAngleSnappingActive)
+        {
+            if (mouseHookId == IntPtr.Zero)
+            {
+                mouseProc = MouseHookCallback;
+                IntPtr hMod = Marshal.GetHINSTANCE(typeof(Form1).Module);
+                mouseHookId = NativeMethods.SetWindowsHookEx(NativeMethods.WH_MOUSE_LL, mouseProc, hMod, 0);
+            }
+
+            btnToggleAngleSnapping.BackColor = Color.FromArgb(168, 85, 247);
+            btnToggleAngleSnapping.Text = $"🎯 Snapping ({angleSnappingPercent}%)";
+            lblAngleStatus.Text = $"{angleSnappingPercent}% ACTIF";
+            lblAngleStatus.ForeColor = Color.FromArgb(192, 132, 252);
+            double threshold = 5.0 + angleSnappingPercent * 0.20;
+            Log($"🎯 Angle Snapping activé à {angleSnappingPercent}% (zone de capture {threshold:0}°).");
+        }
+        else
+        {
+            if (mouseHookId != IntPtr.Zero)
+            {
+                NativeMethods.UnhookWindowsHookEx(mouseHookId);
+                mouseHookId = IntPtr.Zero;
+            }
+
+            btnToggleAngleSnapping.BackColor = Color.FromArgb(76, 29, 149);
+            btnToggleAngleSnapping.Text = "🎯 Angle Snapping [F8]";
+            lblAngleStatus.Text = "DÉSACTIVÉ";
+            lblAngleStatus.ForeColor = Color.FromArgb(150, 135, 180);
+            Log("🎯 Angle Snapping désactivé (Hook libéré pour 0 délai de souris).");
+        }
+    }
+
+    private IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && wParam == (IntPtr)NativeMethods.WM_MOUSEMOVE && isAngleSnappingActive)
+        {
+            if (isSnappingReentrant)
+                return NativeMethods.CallNextHookEx(mouseHookId, nCode, wParam, lParam);
+
+            var hookStruct = Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
+
+            // Ignorer les mouvements injectés (évite la récursion)
+            if ((hookStruct.flags & NativeMethods.LLMHF_INJECTED) != 0)
+            {
+                lastMouseX = hookStruct.pt.x;
+                lastMouseY = hookStruct.pt.y;
+                return NativeMethods.CallNextHookEx(mouseHookId, nCode, wParam, lParam);
+            }
+
+            int curX = hookStruct.pt.x;
+            int curY = hookStruct.pt.y;
+
+            if (!hasLastMousePos)
+            {
+                lastMouseX = curX;
+                lastMouseY = curY;
+                hasLastMousePos = true;
+                return NativeMethods.CallNextHookEx(mouseHookId, nCode, wParam, lParam);
+            }
+
+            int dx = curX - lastMouseX;
+            int dy = curY - lastMouseY;
+
+            if (dx == 0 && dy == 0)
+                return NativeMethods.CallNextHookEx(mouseHookId, nCode, wParam, lParam);
+
+            int absDx = Math.Abs(dx);
+            int absDy = Math.Abs(dy);
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Puissance réglable : elle élargit la zone de capture et réduit
+            // progressivement l'axe secondaire. Les diagonales hors zone restent libres.
+            // ═══════════════════════════════════════════════════════════════════
+
+            // Laisser passer les mouvements rapides pour préserver les flicks.
+            if (absDx > 500 || absDy > 500)
+            {
+                lastMouseX = curX;
+                lastMouseY = curY;
+                return NativeMethods.CallNextHookEx(mouseHookId, nCode, wParam, lParam);
+            }
+
+            double angleDeg = Math.Atan2(absDy, absDx) * (180.0 / Math.PI);
+            double snapStrength = Math.Clamp(angleSnappingPercent / 100.0, 0.05, 1.0);
+            double snapThreshold = 5.0 + angleSnappingPercent * 0.20;
+
+            int targetDx = dx;
+            int targetDy = dy;
+            bool shouldSnap = false;
+
+            if (angleDeg <= snapThreshold && absDx >= 1)
+            {
+                targetDx = dx;
+                targetDy = (int)Math.Round(dy * (1.0 - snapStrength));
+                shouldSnap = true;
+            }
+            else if ((90.0 - angleDeg) <= snapThreshold && absDy >= 1)
+            {
+                targetDx = (int)Math.Round(dx * (1.0 - snapStrength));
+                targetDy = dy;
+                shouldSnap = true;
+            }
+
+            if (shouldSnap)
+            {
+                lastMouseX = curX + (targetDx - dx);
+                lastMouseY = curY + (targetDy - dy);
+
+                try
+                {
+                    isSnappingReentrant = true;
+                    // Injection du vecteur corrigé (axe parasite = 0)
+                    NativeMethods.mouse_event(NativeMethods.MOUSEEVENTF_MOVE, targetDx, targetDy, 0, UIntPtr.Zero);
+                }
+                finally
+                {
+                    isSnappingReentrant = false;
+                }
+                return (IntPtr)1; // Supprime le mouvement brut, remplacé par le vecteur snappé
+            }
+            else
+            {
+                lastMouseX = curX;
+                lastMouseY = curY;
+            }
+        }
+
+        return NativeMethods.CallNextHookEx(mouseHookId, nCode, wParam, lParam);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        const int WM_HOTKEY = 0x0312;
+        if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HOTKEY_ID_F8)
+        {
+            ToggleAngleSnapping();
+        }
+        base.WndProc(ref m);
+    }
+
+    #endregion
+
+    private void ShowAndRestore()
+    {
+        this.Show();
+        this.WindowState = FormWindowState.Normal;
+        this.BringToFront();
+    }
+
+    private void ExitApp()
+    {
+        monitorTimer.Stop();
+        NativeMethods.SetUltimateGamingPowerPlan(false);
+        NativeMethods.EnableHighPrecisionTimer(false);
+        NativeMethods.EnableMouseNoDelay(false);
+        if (mouseHookId != IntPtr.Zero)
+        {
+            NativeMethods.UnhookWindowsHookEx(mouseHookId);
+        }
+        NativeMethods.UnregisterHotKey(this.Handle, HOTKEY_ID_F8);
+        RestoreAllProcessesToNormal();
+        trayIcon.Visible = false;
+        Application.Exit();
+    }
+
+    private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
+    {
+        if (e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            this.Hide();
+            return;
+        }
+
+        NativeMethods.SetUltimateGamingPowerPlan(false);
+    }
+
+    private async void MonitorTimer_Tick(object? sender, EventArgs e)
+    {
+        await CheckActiveGameAndApplyEcoAsync();
+    }
+
+    private async Task CheckActiveGameAndApplyEcoAsync()
+    {
+        if (isDetectionRunning) return;
+        isDetectionRunning = true;
+
+        try
+        {
+            // Mettre à jour l'audio en direct (ce que j'entends)
+            _ = audioTracker.UpdateAsync();
+
+            var processes = Process.GetProcesses();
+
+            if (!chkAutoDetect.Checked && !isManualEcoActive && !chkAutoTurbo.Checked && !isGameActive)
+            {
+                return;
+            }
+
+            int currentPid = Process.GetCurrentProcess().Id;
+            Process? detectedGame = null;
+
+            // 1. PRIORITÉ ABSOLUE : Vérifier la fenêtre actuellement active au premier plan (Foreground Window)
+            IntPtr fgHwnd = NativeMethods.GetForegroundWindow();
+            if (fgHwnd != IntPtr.Zero)
+            {
+                NativeMethods.GetWindowThreadProcessId(fgHwnd, out int fgPid);
+                if (fgPid > 0 && fgPid != currentPid)
+                {
+                    try
+                    {
+                        var fgProc = processes.FirstOrDefault(p => p.Id == fgPid);
+                        if (fgProc != null && !GameIntelligenceService.IsExcluded(fgProc.ProcessName) && !protectedProcesses.Contains(fgProc.ProcessName))
+                        {
+                            if (intelligenceService.KnownGames.Contains(fgProc.ProcessName))
+                            {
+                                detectedGame = fgProc;
+                            }
+                            else
+                            {
+                                if (await Task.Run(() => intelligenceService.IsGameAsync(fgProc)))
+                                {
+                                    detectedGame = fgProc;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 2. EN CAS D'ALT-TAB : Vérifier si un jeu connu tourne avec une fenêtre visible active
+            if (detectedGame == null)
+            {
+                foreach (var proc in processes)
+                {
+                    if (proc.Id == currentPid) continue;
+                    if (GameIntelligenceService.IsExcluded(proc.ProcessName) || protectedProcesses.Contains(proc.ProcessName))
+                    {
+                        continue;
+                    }
+
+                    if (intelligenceService.KnownGames.Contains(proc.ProcessName))
+                    {
+                        // Exiger une fenêtre graphique valide pour les jeux en tâche de fond (évite node, cmd, etc.)
+                        try
+                        {
+                            if (proc.MainWindowHandle != IntPtr.Zero || proc.ProcessName.Contains("Shipping", StringComparison.OrdinalIgnoreCase))
+                            {
+                                detectedGame = proc;
+                                break;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            if (detectedGame != null)
+            {
+                if (!isGameActive || activeGameName != detectedGame.ProcessName)
+                {
+                    isGameActive = true;
+                    activeGameName = detectedGame.ProcessName;
+                    lblActiveGame.Text = activeGameName;
+
+                    // 1. Boost Priorité Haute Processus Jeu
+                    NativeMethods.BoostGameProcess(detectedGame.Id);
+                    // 2. Timer Windows 1ms Haute Précision
+                    NativeMethods.EnableHighPrecisionTimer(true);
+                    // Le plan hautes performances ne s'active que si l'option Turbo CPU en jeu est cochée.
+                    if (chkAutoTurbo.Checked)
+                    {
+                        bool activated = NativeMethods.SetUltimateGamingPowerPlan(true);
+                        Log(activated ? $"⚡ Plan de jeu activé pour {activeGameName}." : "⚠️ Windows n'a pas pu activer le plan de jeu.");
+                    }
+                    else
+                    {
+                        NativeMethods.SetUltimateGamingPowerPlan(false);
+                    }
+
+                    Log($"🎮 Jeu détecté : {activeGameName}. Priorité haute et timer précis activés.");
+
+                    pnlStatusBanner.BackColor = Color.FromArgb(45, 20, 65);
+                    lblStatusHeader.Text = $"🔥 MODE JEU ACTIF • {activeGameName.ToUpper()}";
+                    lblStatusHeader.ForeColor = Color.FromArgb(216, 180, 254);
+
+                    if (chkAutoDetect.Checked || isManualEcoActive)
+                        ApplyEcoToAllBackgroundApps(processes, detectedGame.Id);
+                }
+                else
+                {
+                    if (chkAutoDetect.Checked || isManualEcoActive)
+                        ApplyEcoToAllBackgroundApps(processes, detectedGame.Id);
+                }
+            }
+            else
+            {
+                if (isGameActive)
+                {
+                    isGameActive = false;
+                    NativeMethods.EnableHighPrecisionTimer(false);
+                    bool planRestored = NativeMethods.SetUltimateGamingPowerPlan(false);
+                    Log(planRestored
+                        ? $"ℹ️ {activeGameName} s'est arrêté. Plan d'alimentation précédent rétabli."
+                        : $"⚠️ {activeGameName} s'est arrêté, mais Windows n'a pas pu restaurer le plan précédent.");
+                    activeGameName = "";
+                    lblActiveGame.Text = "En attente...";
+
+                    if (!isManualEcoActive)
+                    {
+                        RestoreAllProcessesToNormal();
+                        pnlStatusBanner.BackColor = Color.FromArgb(24, 18, 48);
+                        lblStatusHeader.Text = "🟣 EN VEILLE • PRÊT POUR LE JEU";
+                        lblStatusHeader.ForeColor = Color.FromArgb(192, 132, 252);
+                    }
+                }
+                else if (isManualEcoActive)
+                {
+                    ApplyEcoToAllBackgroundApps(processes, -1);
+                }
+            }
+        }
+        catch { }
+        finally
+        {
+            isDetectionRunning = false;
+        }
+    }
+
+    private void ApplyEcoToAllBackgroundApps(Process[] allProcesses, int gamePid)
+    {
+        int throttledCount = 0;
+
+        foreach (var proc in allProcesses)
+        {
+            try
+            {
+                if (proc.Id == gamePid || proc.Id == Process.GetCurrentProcess().Id) continue;
+                if (protectedProcesses.Contains(proc.ProcessName)) continue;
+                if (intelligenceService.KnownGames.Contains(proc.ProcessName)) continue;
+
+                if (!currentlyThrottledPids.Contains(proc.Id))
+                {
+                    bool success = NativeMethods.ApplyEcoMode(proc.Id, true);
+                    if (success) currentlyThrottledPids.Add(proc.Id);
+                }
+
+                if (currentlyThrottledPids.Contains(proc.Id)) throttledCount++;
+            }
+            catch { }
+        }
+
+        lblEcoCount.Text = $"{throttledCount} apps";
+    }
+
+    private void RestoreAllProcessesToNormal()
+    {
+        int restored = 0;
+        foreach (int pid in currentlyThrottledPids)
+        {
+            try
+            {
+                NativeMethods.ApplyEcoMode(pid, false);
+                restored++;
+            }
+            catch { }
+        }
+        currentlyThrottledPids.Clear();
+        lblEcoCount.Text = "0 apps";
+        Log($"🔄 {restored} applications restaurées en mode normal.");
+    }
+
+    private void BtnToggleEco_Click(object? sender, EventArgs e)
+    {
+        isManualEcoActive = !isManualEcoActive;
+        if (isManualEcoActive)
+        {
+            btnToggleEco.Text = "🔄 Normal";
+            btnToggleEco.BackColor = Color.FromArgb(168, 85, 247);
+            pnlStatusBanner.BackColor = Color.FromArgb(40, 20, 55);
+            lblStatusHeader.Text = "🟣 MODE ÉCO MANUEL FORCÉ";
+            lblStatusHeader.ForeColor = Color.FromArgb(216, 180, 254);
+            Log("🟣 Mode Éco forcé manuellement.");
+            ApplyEcoToAllBackgroundApps(Process.GetProcesses(), -1);
+        }
+        else
+        {
+            btnToggleEco.Text = "🟣 Mode Éco";
+            btnToggleEco.BackColor = Color.FromArgb(124, 58, 237);
+            pnlStatusBanner.BackColor = Color.FromArgb(24, 18, 48);
+            lblStatusHeader.Text = "🟣 EN VEILLE • PRÊT POUR LE JEU";
+            lblStatusHeader.ForeColor = Color.FromArgb(192, 132, 252);
+            RestoreAllProcessesToNormal();
+        }
+    }
+
+    private void BtnCleanRam_Click(object? sender, EventArgs e)
+    {
+        int count = 0;
+        var procs = Process.GetProcesses();
+        foreach (var p in procs)
+        {
+            try
+            {
+                if (p.Id != Process.GetCurrentProcess().Id)
+                {
+                    NativeMethods.TrimRam(p.Id);
+                    count++;
+                }
+            }
+            catch { }
+        }
+        GC.Collect();
+        Log($"🧹 Cache mémoire vidé pour {count} processus.");
+    }
+
+
+
+    private bool CheckStartupConfig()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", false);
+            return key?.GetValue("GameEcoBot") != null;
+        }
+        catch { return false; }
+    }
+
+    private void ChkRunAtStartup_CheckedChanged(object? sender, EventArgs e)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
+            if (chkRunAtStartup.Checked)
+            {
+                string exePath = Application.ExecutablePath;
+                key?.SetValue("GameEcoBot", $"\"{exePath}\" --minimized");
+                Log("✅ Démarrage automatique avec Windows activé.");
+            }
+            else
+            {
+                key?.DeleteValue("GameEcoBot", false);
+                Log("❌ Démarrage automatique avec Windows désactivé.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Erreur démarrage: {ex.Message}");
+        }
+    }
+
+    private void Log(string message)
+    {
+        string timestamp = DateTime.Now.ToString("HH:mm:ss");
+        rtbLogs.AppendText($"[{timestamp}] {message}\r\n");
+        rtbLogs.SelectionStart = rtbLogs.Text.Length;
+        rtbLogs.ScrollToCaret();
+    }
+
+    private Icon CreateVioletAppIcon()
+    {
+        using Bitmap bmp = new Bitmap(32, 32);
+        using Graphics g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Color.Transparent);
+
+        // Cercle extérieur violet principal
+        using (Brush brush = new SolidBrush(Color.FromArgb(124, 58, 237)))
+        {
+            g.FillEllipse(brush, 2, 2, 28, 28);
+        }
+
+        // Cercle intérieur violet clair (pas d'éclair blanc)
+        using (Brush innerBrush = new SolidBrush(Color.FromArgb(192, 132, 252)))
+        {
+            g.FillEllipse(innerBrush, 9, 9, 14, 14);
+        }
+
+        IntPtr hIcon = bmp.GetHicon();
+        return Icon.FromHandle(hIcon);
+    }
+}

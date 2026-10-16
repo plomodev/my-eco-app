@@ -1,0 +1,1 @@
+- [GitHub release uploads](github-release-uploads.md) — the connected GitHub proxy may block binary uploads; verify the repo workflow or use a user-driven upload.

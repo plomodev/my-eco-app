@@ -1,0 +1,19 @@
+kind = "design-system"
+previewPath = "/"
+title = "GameEcoBot Design System"
+description = "Le système de design violet profond de GameEcoBot : composants de monitoring et d’optimisation PC avec surfaces 3D lumineuses et lisibles."
+version = "1.0.0"
+id = "artifacts/gameecobot-design-system"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22585
+
+[services.development]
+run = "pnpm --filter @workspace/gameecobot-design-system run dev"
+
+[services.env]
+PORT = "22585"
+BASE_PATH = "/"
