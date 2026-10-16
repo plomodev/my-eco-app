@@ -4,63 +4,48 @@ on:
   push:
     tags:
       - "v*"
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish or update (for example v1.0.9)"
+        required: true
+        type: string
+        default: "v1.0.9"
 
 permissions:
   contents: write
 
 jobs:
   publish-windows:
-    name: Build Windows x64 release
     runs-on: windows-latest
-
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
     steps:
-      - name: Check out tagged source
+      - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
-      - name: Install .NET 10 SDK
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: "10.0.x"
 
-      - name: Publish self-contained executable
-        shell: pwsh
-        run: >
-          dotnet publish GameEcoBot.csproj
-          --configuration Release
-          --runtime win-x64
-          --self-contained true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:DebugType=None
-          -p:DebugSymbols=false
-          --output publish/win-x64
+      - name: Publish self-contained Windows x64 executable
+        run: dotnet publish windows-app/GameEcoBot.csproj --configuration Release --runtime win-x64 --self-contained true --output release
 
-      - name: Create release and attach executable
-        shell: pwsh
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: GameEcoBot ${{ env.RELEASE_TAG }} — Téléchargement Windows x64
+          body: |
+            Exécutable autonome Windows x64.
+            Le dépôt est privé : le téléchargement est réservé aux personnes ayant accès au dépôt.
+          files: release/GameEcoBot.exe
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          draft: false
+          make_latest: true
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag = $env:GITHUB_REF_NAME
-          $exe = "publish/win-x64/GameEcoBot.exe"
-          $releaseJson = gh release view $tag --json assets 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            $release = $releaseJson | ConvertFrom-Json
-            if ($release.assets.name -contains "GameEcoBot.exe") {
-              Write-Host "Release $tag already contains GameEcoBot.exe; skipping duplicate upload."
-              exit 0
-            }
-
-            gh release upload $tag $exe --clobber
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            exit 0
-          }
-
-          gh release create $tag $exe `
-            --title "GameEcoBot $tag — Téléchargement Windows x64" `
-            --notes "Exécutable autonome Windows x64. Le dépôt est privé : le téléchargement est réservé aux personnes ayant accès au dépôt." `
-            --verify-tag
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
