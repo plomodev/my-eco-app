@@ -22,6 +22,7 @@ static class Program
         try
         {
             ApplicationConfiguration.Initialize();
+            AppFonts.Initialize();
             bool startMinimized = args.Length > 0 && args[0].Equals("--minimized", StringComparison.OrdinalIgnoreCase);
             Application.Run(new Form1(startMinimized));
         }

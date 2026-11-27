@@ -32,7 +32,7 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Publish self-contained Windows x64 executable
-        run: dotnet publish windows-app/GameEcoBot.csproj --configuration Release --runtime win-x64 --self-contained true --output release
+        run: dotnet publish GameEcoBot.csproj --configuration Release --runtime win-x64 --self-contained true --output release
 
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2

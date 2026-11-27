@@ -264,7 +264,7 @@ public class GameIntelligenceService
 
         await Task.Run(() =>
         {
-            OnLog?.Invoke("🧠 Lancement de l'Analyse IA Approfondie (Tous disques, Steam, Epic, Riot, Registre, Roblox)...");
+            OnLog?.Invoke("[IA] Lancement de l'Analyse Approfondie (Tous disques, Steam, Epic, Riot, Registre, Roblox)...");
 
             var allDrives = DriveInfo.GetDrives()
                 .Where(d => d.IsReady && (d.DriveType == DriveType.Fixed || d.DriveType == DriveType.Removable))
@@ -297,11 +297,11 @@ public class GameIntelligenceService
             int countLocal = foundGameNames.Count;
             string previewLocal = string.Join(", ", foundGameNames.Take(6));
             if (countLocal > 6) previewLocal += $"... (+{countLocal - 6} autres)";
-            OnLog?.Invoke($"🟣 Scan local terminé : {countLocal} jeux trouvés ({previewLocal})");
+            OnLog?.Invoke($"[SCAN] Scan local terminé : {countLocal} jeux trouvés ({previewLocal})");
         });
 
         // ── Phase Internet (async – SteamSpy + Steam Store + RAWG) ────
-        OnLog?.Invoke("🌐 [Internet] Enrichissement IA via SteamSpy, Steam Store & RAWG...");
+        OnLog?.Invoke("[INTERNET] Enrichissement IA via SteamSpy, Steam Store & RAWG...");
         int internetAdded = 0;
         try
         {
@@ -309,13 +309,13 @@ public class GameIntelligenceService
         }
         catch (Exception ex)
         {
-            OnLog?.Invoke($"⚠️ [Internet] Enrichissement internet échoué : {ex.Message}");
+            OnLog?.Invoke($"[ATTENTION] [Internet] Enrichissement internet échoué : {ex.Message}");
         }
 
         SaveCache();
 
         int total = KnownGames.Count;
-        OnLog?.Invoke($"🟣 Intelligence IA Boostée : {total} jeux connus au total (dont {internetAdded} via internet) !");
+        OnLog?.Invoke($"[IA] Intelligence IA Boostée : {total} jeux connus au total (dont {internetAdded} via internet) !");
         OnGamesUpdated?.Invoke(total);
 
         return total;
@@ -838,7 +838,7 @@ public class GameIntelligenceService
             {
                 RegisterGame(name);
                 SaveCache();
-                OnLog?.Invoke($"🎮 Détection IA Métadonnées Moteur : '{name}' identifié comme jeu.");
+                OnLog?.Invoke($"[IA] Détection Métadonnées Moteur : '{name}' identifié comme jeu.");
                 return true;
             }
 
@@ -851,7 +851,7 @@ public class GameIntelligenceService
             {
                 RegisterGame(name);
                 SaveCache();
-                OnLog?.Invoke($"🎮 Détection IA Dossier Jeux : '{name}' reconnu.");
+                OnLog?.Invoke($"[IA] Détection Dossier Jeux : '{name}' reconnu.");
                 return true;
             }
         }
@@ -879,7 +879,7 @@ public class GameIntelligenceService
                 {
                     RegisterGame(name);
                     SaveCache();
-                    OnLog?.Invoke($"🟣 Détection IA SDK Jeu ({mName}) : '{name}' validé comme jeu.");
+                    OnLog?.Invoke($"[IA] Détection SDK Jeu ({mName}) : '{name}' validé comme jeu.");
                     return true;
                 }
                 if (genericGpuDlls.Contains(mName))
@@ -894,7 +894,7 @@ public class GameIntelligenceService
             {
                 RegisterGame(name);
                 SaveCache();
-                OnLog?.Invoke($"🟣 Détection IA Rendu 3D Plein Écran ({foundGpuDll}) : '{name}' validé comme jeu.");
+                OnLog?.Invoke($"[IA] Détection Rendu 3D Plein Écran ({foundGpuDll}) : '{name}' validé comme jeu.");
                 return true;
             }
         }
@@ -908,7 +908,7 @@ public class GameIntelligenceService
         {
             RegisterGame(name);
             SaveCache();
-            OnLog?.Invoke($"🎮 Détection IA Motif Exécutable ({name}) : Jeu reconnu.");
+            OnLog?.Invoke($"[IA] Détection Motif Exécutable ({name}) : Jeu reconnu.");
             return true;
         }
 

@@ -117,12 +117,81 @@ public static class NativeMethods
     public static extern bool GetCursorPos(out POINT lpPoint);
 
     public const uint MOUSEEVENTF_MOVE = 0x0001;
+    public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
 
     [DllImport("user32.dll")]
     public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo);
 
+    // SendInput — injection directe zéro-lag (pas de double-événement comme SetCursorPos)
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
+    public const int SM_CXSCREEN = 0;
+    public const int SM_CYSCREEN = 1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct INPUT
+    {
+        [FieldOffset(0)] public uint type;
+        [FieldOffset(4)] public MOUSEINPUT mi;
+    }
+
+    public const uint INPUT_MOUSE = 0;
+
+    /// <summary>
+    /// Déplace le curseur à une position absolue sans générer de double-événement.
+    /// Utilise SendInput avec MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE.
+    /// </summary>
+    public static void MoveMouseAbsolute(int screenX, int screenY)
+    {
+        int cx = GetSystemMetrics(SM_CXSCREEN);
+        int cy = GetSystemMetrics(SM_CYSCREEN);
+        if (cx <= 0) cx = 1920;
+        if (cy <= 0) cy = 1080;
+
+        // Convertir coordonnées écran → coordonnées normalisées 0-65535
+        int normalizedX = (int)((screenX * 65535L + cx / 2) / cx);
+        int normalizedY = (int)((screenY * 65535L + cy / 2) / cy);
+
+        var input = new INPUT
+        {
+            type = INPUT_MOUSE,
+            mi = new MOUSEINPUT
+            {
+                dx = normalizedX,
+                dy = normalizedY,
+                mouseData = 0,
+                dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE,
+                time = 0,
+                dwExtraInfo = IntPtr.Zero
+            }
+        };
+
+        SendInput(1, new[] { input }, Marshal.SizeOf<INPUT>());
+    }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     public static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostThreadMessage(uint idThread, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
 
     // Global Hotkey (F8 to toggle Angle Snapping in-game)
     [DllImport("user32.dll")]
@@ -134,6 +203,10 @@ public static class NativeMethods
     public static bool ApplyEcoMode(int pid, bool enable)
     {
         IntPtr handle = OpenProcess(PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA, false, pid);
+        if (handle == IntPtr.Zero)
+        {
+            handle = OpenProcess(PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        }
         if (handle == IntPtr.Zero) return false;
 
         try
@@ -145,13 +218,13 @@ public static class NativeMethods
                 StateMask = enable ? PROCESS_POWER_THROTTLING_EXECUTION_SPEED : 0
             };
 
-            SetProcessInformation(handle, ProcessPowerThrottling, ref throttling, (uint)Marshal.SizeOf(throttling));
-            SetPriorityClass(handle, enable ? IDLE_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+            bool infoSet = SetProcessInformation(handle, ProcessPowerThrottling, ref throttling, (uint)Marshal.SizeOf(throttling));
+            bool prioSet = SetPriorityClass(handle, enable ? IDLE_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
             if (enable)
             {
-                EmptyWorkingSet(handle);
+                try { EmptyWorkingSet(handle); } catch { }
             }
-            return true;
+            return infoSet || prioSet;
         }
         catch
         {
@@ -662,20 +735,20 @@ public static class NativeMethods
 
             if (enable)
             {
-                return (true, $"⚡ Ping NoDelay ACTIVÉ sur {adapterCount} cartes réseau (Nagle OFF, ACK immédiat, QoS 100%).");
+                return (true, $"[RESEAU] Ping NoDelay ACTIVE sur {adapterCount} cartes reseau (Nagle OFF, ACK immediat, QoS 100%).");
             }
             else
             {
-                return (true, "ℹ️ Paramètres réseau Windows restaurés par défaut.");
+                return (true, "[RESEAU] Parametres reseau Windows restaures par defaut.");
             }
         }
         catch (UnauthorizedAccessException)
         {
-            return (false, "⚠️ Droits Administrateur requis pour appliquer les tweaks réseau TCP. Lancez l'application en tant qu'administrateur !");
+            return (false, "[ATTENTION] Droits Administrateur requis pour appliquer les tweaks reseau TCP. Lancez l'application en tant qu'administrateur !");
         }
         catch (Exception ex)
         {
-            return (false, $"⚠️ Erreur réseau : {ex.Message}");
+            return (false, $"[ERREUR] Erreur reseau : {ex.Message}");
         }
     }
 
@@ -693,5 +766,60 @@ public static class NativeMethods
         catch { }
         return false;
     }
+
+    // ── Wallpaper Engine & WorkerW Desktop Integration ──
+    public const uint SPI_SETDESKWALLPAPER = 0x0014;
+
+    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SystemParametersInfoSetWallpaper(uint uiAction, uint uiParam, string? pvParam, uint fWinIni);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string? lpszWindow);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    public const int GWL_STYLE = -16;
+    public const int WS_VISIBLE = 0x10000000;
+    public const int WS_CHILD = 0x40000000;
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOACTIVATE = 0x0010;
+    public const uint SWP_SHOWWINDOW = 0x0040;
+    public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    public const int SW_HIDE = 0;
+    public const int SW_SHOWNORMAL = 1;
+    public const int SW_SHOWMINIMIZED = 2;
+    public const int SW_SHOWMAXIMIZED = 3;
+    public const int SW_SHOWNOACTIVATE = 4;
+    public const int SW_SHOW = 5;
+    public const int SW_MINIMIZE = 6;
+    public const int SW_SHOWMINNOACTIVE = 7;
+    public const int SW_SHOWNA = 8;
+    public const int SW_RESTORE = 9;
 }
 

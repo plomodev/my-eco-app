@@ -61,24 +61,24 @@ public class InternetIntelligenceService
         int added = 0;
         try
         {
-            OnLog?.Invoke("🌐 [Internet] Récupération Top 100 jeux Steam (SteamSpy All-Time)...");
+            OnLog?.Invoke("[INTERNET] Récupération Top 100 jeux Steam (SteamSpy All-Time)...");
             var names1 = await GetSteamSpyTopNamesAsync(SteamSpyTop).ConfigureAwait(false);
             foreach (var name in names1)
                 if (intel.RegisterGame(name)) added++;
 
-            OnLog?.Invoke($"🌐 [Internet] +{added} jeux All-Time intégrés. Récup jeux récents...");
+            OnLog?.Invoke($"[INTERNET] +{added} jeux All-Time intégrés. Récup jeux récents...");
 
             int added2 = 0;
             var names2 = await GetSteamSpyTopNamesAsync(SteamSpyRecent).ConfigureAwait(false);
             foreach (var name in names2)
                 if (intel.RegisterGame(name)) added2++;
 
-            OnLog?.Invoke($"🌐 [Internet] +{added2} jeux tendance (2 semaines) intégrés.");
+            OnLog?.Invoke($"[INTERNET] +{added2} jeux tendance (2 semaines) intégrés.");
             added += added2;
         }
         catch (Exception ex)
         {
-            OnLog?.Invoke($"⚠️ [Internet] SteamSpy indisponible : {ex.Message}");
+            OnLog?.Invoke($"[ATTENTION] [Internet] SteamSpy indisponible : {ex.Message}");
         }
         return added;
     }
@@ -146,7 +146,7 @@ public class InternetIntelligenceService
         }
         catch (Exception ex)
         {
-            OnLog?.Invoke($"⚠️ [Internet] Vérif en ligne de '{processName}' échouée : {ex.Message}");
+            OnLog?.Invoke($"[ATTENTION] [Internet] Vérif en ligne de '{processName}' échouée : {ex.Message}");
         }
 
         // Ne pas transformer une panne réseau/API en résultat négatif permanent.
@@ -160,7 +160,7 @@ public class InternetIntelligenceService
         if (isGame)
         {
             intel.RegisterGame(processName);
-            OnLog?.Invoke($"🌐 [Internet] '{processName}' → Identifié comme JEU via recherche en ligne !");
+            OnLog?.Invoke($"[INTERNET] '{processName}' -> Identifié comme JEU via recherche en ligne !");
         }
 
         return isGame;
@@ -325,7 +325,7 @@ public class InternetIntelligenceService
 
         if (unknowns.Count > 0)
         {
-            OnLog?.Invoke($"🌐 [Internet] Vérification en ligne de {unknowns.Count} processus inconnus...");
+            OnLog?.Invoke($"[INTERNET] Vérification en ligne de {unknowns.Count} processus inconnus...");
             var semSlots = new SemaphoreSlim(5);
             int internetFound = 0;
             var tasks = unknowns.Select(async proc =>
@@ -340,7 +340,7 @@ public class InternetIntelligenceService
             });
             await Task.WhenAll(tasks).ConfigureAwait(false);
             if (internetFound > 0)
-                OnLog?.Invoke($"🌐 [Internet] {internetFound} nouveaux jeux identifiés en ligne !");
+                OnLog?.Invoke($"[INTERNET] {internetFound} nouveaux jeux identifiés en ligne !");
             total += internetFound;
         }
 

@@ -107,7 +107,11 @@ internal sealed class PerformanceChart : Control
         {
             if (values[i] is not { } value)
             {
-                if (points.Count > 1)
+                if (points.Count > 2)
+                {
+                    graphics.DrawCurve(pen, points.ToArray(), 0.35f);
+                }
+                else if (points.Count > 1)
                 {
                     graphics.DrawLines(pen, points.ToArray());
                 }
@@ -121,7 +125,11 @@ internal sealed class PerformanceChart : Control
             points.Add(new PointF(x, y));
         }
 
-        if (points.Count > 1)
+        if (points.Count > 2)
+        {
+            graphics.DrawCurve(pen, points.ToArray(), 0.35f);
+        }
+        else if (points.Count > 1)
         {
             graphics.DrawLines(pen, points.ToArray());
         }

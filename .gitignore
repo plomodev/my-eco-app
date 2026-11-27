@@ -50,3 +50,12 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Build outputs (local only)
+bin/
+obj/
+*.exe
+*.pdb
+*.dll
+*.xml
+generated-artifacts/

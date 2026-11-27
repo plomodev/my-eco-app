@@ -11,7 +11,7 @@ namespace GameEcoBot;
 public class ModernCard : Panel
 {
     public int BorderRadius { get; set; } = 12;
-    private Color _fillColor = Color.FromArgb(19, 16, 36);
+    private Color _fillColor = Color.FromArgb(22, 17, 44);
     public Color FillColor
     {
         get => _fillColor;
@@ -24,7 +24,7 @@ public class ModernCard : Panel
         set { FillColor = value; base.BackColor = value; }
     }
 
-    public Color BorderColor { get; set; } = Color.FromArgb(48, 38, 80);
+    public Color BorderColor { get; set; } = Color.FromArgb(60, 48, 105);
 
     public ModernCard()
     {
@@ -97,7 +97,7 @@ public class ModernCard : Panel
 public class ModernButton : Button
 {
     public int BorderRadius { get; set; } = 10;
-    private Color _normalColor = Color.FromArgb(124, 58, 237);
+    private Color _normalColor = Color.FromArgb(36, 27, 58);
     public Color NormalColor
     {
         get => _normalColor;
@@ -113,8 +113,8 @@ public class ModernButton : Button
             else
             {
                 // Transparent / inactive pill state
-                HoverColor = Color.FromArgb(36, 30, 60);
-                PressedColor = Color.FromArgb(50, 42, 80);
+                HoverColor = Color.FromArgb(52, 42, 90);
+                PressedColor = Color.FromArgb(28, 21, 48);
                 BorderColor = Color.Transparent;
             }
             Invalidate();
@@ -131,9 +131,9 @@ public class ModernButton : Button
         }
     }
 
-    public Color HoverColor { get; set; } = Color.FromArgb(139, 92, 246);
-    public Color PressedColor { get; set; } = Color.FromArgb(109, 40, 217);
-    public Color BorderColor { get; set; } = Color.FromArgb(168, 85, 247);
+    public Color HoverColor { get; set; } = Color.FromArgb(52, 42, 90);
+    public Color PressedColor { get; set; } = Color.FromArgb(28, 21, 48);
+    public Color BorderColor { get; set; } = Color.FromArgb(60, 48, 105);
     public bool HasBorder { get; set; } = true;
 
     private bool isHovered = false;
@@ -151,7 +151,7 @@ public class ModernButton : Button
         this.FlatStyle = FlatStyle.Flat;
         this.FlatAppearance.BorderSize = 0;
         this.ForeColor = Color.White;
-        this.Font = new Font("Segoe UI Variable Display", 9.5f, FontStyle.Bold);
+        this.Font = AppFonts.GetBoldFont(9.5f);
         this.Cursor = Cursors.Hand;
     }
 
@@ -208,7 +208,7 @@ public class ModernButton : Button
 
         if (HasBorder && BorderColor != Color.Transparent && BorderColor.A > 0)
         {
-            Color bColor = isHovered ? Color.FromArgb(216, 180, 254) : BorderColor;
+            Color bColor = isHovered ? Color.FromArgb(192, 132, 252) : BorderColor;
             using var pen = new Pen(bColor, 1f);
             g.DrawPath(pen, path);
         }
@@ -226,9 +226,9 @@ public class ModernCircleButton : Control
 {
     public string IconText { get; set; } = "";
     public bool IsPrimary { get; set; } = false; // Blanc pour Play/Pause, Sombre pour le reste
-    public Color NormalBg { get; set; } = Color.FromArgb(42, 34, 66);
-    public Color HoverBg { get; set; } = Color.FromArgb(70, 58, 105);
-    public Color NormalFg { get; set; } = Color.FromArgb(220, 215, 235);
+    public Color NormalBg { get; set; } = Color.FromArgb(36, 27, 58);
+    public Color HoverBg { get; set; } = Color.FromArgb(52, 42, 90);
+    public Color NormalFg { get; set; } = Color.FromArgb(181, 168, 211);
     public Color HoverFg { get; set; } = Color.White;
     public bool IsDestructive { get; set; } = false; // Pour bouton fermer (rouge au survol)
 
@@ -246,7 +246,7 @@ public class ModernCircleButton : Control
         base.BackColor = Color.Transparent;
         this.Cursor = Cursors.Hand;
         this.Size = new Size(32, 32);
-        this.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
+        this.Font = AppFonts.GetBoldFont(10f);
     }
 
     protected override void OnMouseEnter(EventArgs e)
@@ -305,7 +305,7 @@ public class ModernCircleButton : Control
         }
         else
         {
-            bg = isPressed ? Color.FromArgb(85, 70, 130) : (isHovered ? HoverBg : NormalBg);
+            bg = isPressed ? Color.FromArgb(52, 42, 90) : (isHovered ? HoverBg : NormalBg);
             fg = isHovered ? HoverFg : NormalFg;
         }
 
@@ -317,7 +317,7 @@ public class ModernCircleButton : Control
         // Bordure discrète si non-primaire
         if (!IsPrimary && !isHovered)
         {
-            using var pen = new Pen(Color.FromArgb(65, 55, 95), 1f);
+            using var pen = new Pen(Color.FromArgb(40, 32, 64), 1f);
             g.DrawEllipse(pen, rect);
         }
 
@@ -350,7 +350,7 @@ public class ModernToggleSwitch : Control
     public string Title { get; set; } = "";
     public string? Subtitle { get; set; }
     public Color ActiveTrackColor { get; set; } = Color.FromArgb(124, 58, 237);
-    public Color InactiveTrackColor { get; set; } = Color.FromArgb(36, 30, 60);
+    public Color InactiveTrackColor { get; set; } = Color.FromArgb(36, 27, 58);
 
     public event EventHandler? CheckedChanged;
 
@@ -365,7 +365,7 @@ public class ModernToggleSwitch : Control
         base.BackColor = Color.Transparent;
         this.Cursor = Cursors.Hand;
         this.Height = 36;
-        this.Font = new Font("Segoe UI Variable Text", 9.5f);
+        this.Font = AppFonts.GetFont(9.5f);
     }
 
     protected override void OnClick(EventArgs e)
@@ -395,17 +395,17 @@ public class ModernToggleSwitch : Control
             g.FillPath(brush, path);
         }
 
-        using (var pen = new Pen(Checked ? Color.FromArgb(168, 85, 247) : Color.FromArgb(60, 50, 90), 1f))
+        using (var pen = new Pen(Checked ? Color.FromArgb(192, 132, 252) : Color.FromArgb(60, 48, 105), 1f))
         {
             g.DrawPath(pen, path);
         }
 
-        // Thumb (cercle blanc)
+        // Thumb (cercle noir si actif, gris si inactif)
         int thumbSize = 16;
         int thumbY = pillY + (pillH - thumbSize) / 2;
         int thumbX = Checked ? (pillW - thumbSize - 3) : 3;
 
-        using (var thumbBrush = new SolidBrush(Color.White))
+        using (var thumbBrush = new SolidBrush(Checked ? Color.White : Color.FromArgb(181, 168, 211)))
         {
             g.FillEllipse(thumbBrush, thumbX, thumbY, thumbSize, thumbSize);
         }
@@ -417,16 +417,16 @@ public class ModernToggleSwitch : Control
         if (string.IsNullOrEmpty(Subtitle))
         {
             var textRect = new Rectangle(textX, 0, textW, Height);
-            TextRenderer.DrawText(g, Title, Font, textRect, Color.FromArgb(225, 220, 245),
+            TextRenderer.DrawText(g, Title, Font, textRect, Color.White,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         }
         else
         {
-            using (var titleFont = new Font(Font.FontFamily, 9f, FontStyle.Bold))
-            using (var subFont = new Font(Font.FontFamily, 8f))
+            using (var titleFont = AppFonts.GetBoldFont(9f))
+            using (var subFont = AppFonts.GetBodyFont(8f))
             {
-                TextRenderer.DrawText(g, Title, titleFont, new Point(textX, pillY - 2), Color.FromArgb(235, 230, 255));
-                TextRenderer.DrawText(g, Subtitle, subFont, new Point(textX, pillY + 14), Color.FromArgb(160, 150, 190));
+                TextRenderer.DrawText(g, Title, titleFont, new Point(textX, pillY - 2), Color.White);
+                TextRenderer.DrawText(g, Subtitle, subFont, new Point(textX, pillY + 14), Color.FromArgb(181, 168, 211));
             }
         }
     }
@@ -456,8 +456,8 @@ public class ModernSlider : Control
         }
     }
 
-    public Color ActiveColor { get; set; } = Color.FromArgb(168, 85, 247);
-    public Color InactiveColor { get; set; } = Color.FromArgb(36, 30, 60);
+    public Color ActiveColor { get; set; } = Color.FromArgb(124, 58, 237);
+    public Color InactiveColor { get; set; } = Color.FromArgb(36, 27, 58);
 
     public event EventHandler? ValueChanged;
     private bool isDragging = false;
@@ -537,7 +537,7 @@ public class ModernSlider : Control
         {
             var activeRect = new Rectangle(pad, trackY, activeW, trackH);
             using var activePath = ModernCard.CreateRoundedRectangle(activeRect, trackH / 2);
-            using var activeBrush = new LinearGradientBrush(activeRect, Color.FromArgb(124, 58, 237), ActiveColor, 0f);
+            using var activeBrush = new LinearGradientBrush(activeRect, Color.FromArgb(109, 40, 217), ActiveColor, 0f);
             g.FillPath(activeBrush, activePath);
         }
         else if (activeW == 1)
@@ -554,7 +554,7 @@ public class ModernSlider : Control
         int thumbY = Height / 2;
 
         // Aura lumineuse autour du thumb
-        using (var glowBrush = new SolidBrush(Color.FromArgb(60, 168, 85, 247)))
+        using (var glowBrush = new SolidBrush(Color.FromArgb(30, 124, 58, 237)))
         {
             g.FillEllipse(glowBrush, thumbX - thumbRadius - 4, thumbY - thumbRadius - 4, (thumbRadius + 4) * 2, (thumbRadius + 4) * 2);
         }
@@ -565,8 +565,8 @@ public class ModernSlider : Control
             g.FillEllipse(thumbBrush, thumbX - thumbRadius, thumbY - thumbRadius, thumbRadius * 2, thumbRadius * 2);
         }
 
-        // Centre violet
-        using (var centerBrush = new SolidBrush(ActiveColor))
+        // Centre sombre
+        using (var centerBrush = new SolidBrush(Color.FromArgb(22, 17, 44)))
         {
             g.FillEllipse(centerBrush, thumbX - 3, thumbY - 3, 6, 6);
         }

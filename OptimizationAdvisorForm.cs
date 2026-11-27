@@ -16,11 +16,11 @@ namespace GameEcoBot;
 /// </summary>
 public sealed class OptimizationAdvisorForm : Form
 {
-    private static readonly Color BackgroundColor = Color.FromArgb(12, 10, 24);
-    private static readonly Color CardColor = Color.FromArgb(22, 17, 44);
-    private static readonly Color BorderColor = Color.FromArgb(60, 48, 105);
-    private static readonly Color AccentColor = Color.FromArgb(192, 132, 252);
-    private static readonly Color MutedColor = Color.FromArgb(190, 180, 215);
+    private static readonly Color BackgroundColor = Color.FromArgb(10, 10, 10);
+    private static readonly Color CardColor = Color.FromArgb(18, 18, 18);
+    private static readonly Color BorderColor = Color.FromArgb(40, 40, 40);
+    private static readonly Color AccentColor = Color.White;
+    private static readonly Color MutedColor = Color.FromArgb(160, 160, 160);
 
     private readonly OptimizationProgress progress;
     private readonly string progressPath;
@@ -40,7 +40,7 @@ public sealed class OptimizationAdvisorForm : Form
         StartPosition = FormStartPosition.CenterParent;
         BackColor = BackgroundColor;
         ForeColor = Color.White;
-        Font = new Font("Segoe UI", 9f);
+        Font = AppFonts.GetBodyFont(9f);
         ClientSize = new Size(1040, 760);
         MinimumSize = new Size(860, 650);
         ShowInTaskbar = false;
@@ -54,7 +54,7 @@ public sealed class OptimizationAdvisorForm : Form
         {
             Dock = DockStyle.Top,
             Height = 88,
-            BackColor = Color.FromArgb(10, 8, 18),
+            BackColor = Color.FromArgb(14, 14, 14),
             Padding = new Padding(20, 12, 20, 8)
         };
 
@@ -63,7 +63,7 @@ public sealed class OptimizationAdvisorForm : Form
             Text = "Assistant d'optimisation",
             Location = new Point(20, 12),
             AutoSize = true,
-            Font = new Font("Segoe UI Variable Display", 17f, FontStyle.Bold),
+            Font = AppFonts.GetTitleFont(17f),
             ForeColor = AccentColor,
             BackColor = Color.Transparent
         });
@@ -96,7 +96,7 @@ public sealed class OptimizationAdvisorForm : Form
             SizeMode = TabSizeMode.Fixed,
             Padding = new Point(12, 5),
             BackColor = BackgroundColor,
-            Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            Font = AppFonts.GetBoldFont(9f)
         };
         tabs.DrawItem += (_, e) =>
         {
@@ -104,8 +104,8 @@ public sealed class OptimizationAdvisorForm : Form
             bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
             var bounds = e.Bounds;
             using var fill = new SolidBrush(selected
-                ? Color.FromArgb(82, 44, 145)
-                : Color.FromArgb(24, 19, 42));
+                ? Color.FromArgb(40, 40, 40)
+                : Color.FromArgb(18, 18, 18));
             e.Graphics.FillRectangle(fill, bounds);
             TextRenderer.DrawText(
                 e.Graphics,
@@ -276,7 +276,7 @@ public sealed class OptimizationAdvisorForm : Form
             Size = new Size(card.Width - 30, 22),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             AutoEllipsis = true,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Font = AppFonts.GetBoldFont(9.5f),
             ForeColor = AccentColor,
             BackColor = Color.Transparent
         };
@@ -287,7 +287,7 @@ public sealed class OptimizationAdvisorForm : Form
             Size = new Size(card.Width - 32, 48),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             AutoEllipsis = true,
-            Font = new Font("Segoe UI", 8.7f),
+            Font = AppFonts.GetBodyFont(8.7f),
             ForeColor = MutedColor,
             BackColor = Color.Transparent
         };
@@ -296,7 +296,7 @@ public sealed class OptimizationAdvisorForm : Form
             Text = "Vérifié / fait",
             Location = new Point(15, 92),
             AutoSize = true,
-            ForeColor = Color.FromArgb(220, 215, 235),
+            ForeColor = Color.FromArgb(220, 220, 220),
             BackColor = Color.Transparent,
             Checked = progress.Checks.TryGetValue(id, out bool isChecked) && isChecked
         };
@@ -361,7 +361,7 @@ public sealed class OptimizationAdvisorForm : Form
             Location = new Point(15, 10),
             Size = new Size(card.Width - 30, 22),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Font = AppFonts.GetBoldFont(9.5f),
             ForeColor = AccentColor,
             BackColor = Color.Transparent
         });
@@ -404,7 +404,7 @@ public sealed class OptimizationAdvisorForm : Form
             Location = new Point(16, 112),
             Size = new Size(card.Width - 32, 25),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Font = AppFonts.GetBoldFont(10f),
             ForeColor = AccentColor,
             BackColor = Color.Transparent
         };
@@ -446,7 +446,7 @@ public sealed class OptimizationAdvisorForm : Form
                 ? Math.Min(initialValue.Value, 10_000_000)
                 : 0,
             Width = 145,
-            BackColor = Color.FromArgb(35, 28, 58),
+            BackColor = Color.FromArgb(24, 24, 24),
             ForeColor = Color.White,
             BorderStyle = BorderStyle.FixedSingle
         };

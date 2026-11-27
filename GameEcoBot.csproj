@@ -14,4 +14,31 @@
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="windows-app\**" />
+    <EmbeddedResource Remove="windows-app\**" />
+    <None Remove="windows-app\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="fonts\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="crosshair_presets.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="DeployToRootAndDesktop" AfterTargets="Publish">
+    <Message Importance="high" Text="Deploying published GameEcoBot.exe to workspace root and Desktop\OK..." />
+    <Copy SourceFiles="$(PublishDir)GameEcoBot.exe" DestinationFiles="$(MSBuildProjectDirectory)\GameEcoBot.exe" OverwriteReadOnlyFiles="true" ContinueOnError="true" />
+    <Copy SourceFiles="$(PublishDir)GameEcoBot.exe" DestinationFiles="C:\Users\HOME\Desktop\OK\GameEcoBot.exe" OverwriteReadOnlyFiles="true" ContinueOnError="true" />
+  </Target>
+
 </Project>

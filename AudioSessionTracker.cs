@@ -1,17 +1,24 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Windows.Media.Control;
 
 namespace GameEcoBot;
 
+/// <summary>
+/// Suivi exclusif de la session audio Spotify.
+/// Ignore systématiquement les navigateurs (Chrome, Edge, Firefox) et les autres applications,
+/// pour afficher uniquement la musique en cours sur Spotify.
+/// </summary>
 public class AudioSessionTracker
 {
-    public string CurrentTitle { get; private set; } = "Aucun son";
-    public string CurrentArtist { get; private set; } = "En attente...";
-    public string CurrentSource { get; private set; } = "via Média";
+    public string CurrentTitle { get; private set; } = "Aucune lecture";
+    public string CurrentArtist { get; private set; } = "Spotify";
+    public string CurrentSource { get; private set; } = "Spotify";
     public Image? CurrentThumbnail { get; private set; }
     public bool HasMedia { get; private set; } = false;
     public bool IsPlaying { get; private set; } = false;
@@ -23,91 +30,127 @@ public class AudioSessionTracker
         try
         {
             var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-            var session = manager?.GetCurrentSession();
-            if (session != null)
+            if (manager != null)
             {
-                var playbackInfo = session.GetPlaybackInfo();
-                IsPlaying = playbackInfo?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
-
-                var props = await session.TryGetMediaPropertiesAsync();
-                if (props != null && !string.IsNullOrWhiteSpace(props.Title))
+                // Recherche EXCLUSIVE de la session Spotify parmi toutes les sessions audio actives
+                GlobalSystemMediaTransportControlsSession? spotifySession = null;
+                var sessions = manager.GetSessions();
+                if (sessions != null)
                 {
-                    string newTitle = props.Title.Length > 20 ? props.Title.Substring(0, 18) + "..." : props.Title;
-                    string newArtist = string.IsNullOrWhiteSpace(props.Artist) ? "Média" : props.Artist;
-                    if (newArtist.Length > 20) newArtist = newArtist.Substring(0, 18) + "...";
-
-                    bool changed = newTitle != CurrentTitle || newArtist != CurrentArtist || !HasMedia;
-
-                    CurrentTitle = newTitle;
-                    CurrentArtist = newArtist;
-                    HasMedia = true;
-
-                    // Détecter la source (Spotify, Chrome, etc.)
-                    try
+                    foreach (var s in sessions)
                     {
-                        string appId = session.SourceAppUserModelId ?? "";
+                        string appId = s.SourceAppUserModelId ?? "";
                         if (appId.Contains("Spotify", StringComparison.OrdinalIgnoreCase))
-                            CurrentSource = "via Spotify";
-                        else if (appId.Contains("Chrome", StringComparison.OrdinalIgnoreCase))
-                            CurrentSource = "via Chrome";
-                        else if (appId.Contains("Firefox", StringComparison.OrdinalIgnoreCase))
-                            CurrentSource = "via Firefox";
-                        else if (appId.Contains("Edge", StringComparison.OrdinalIgnoreCase))
-                            CurrentSource = "via Edge";
-                        else if (appId.Contains("Groove", StringComparison.OrdinalIgnoreCase) || appId.Contains("ZuneMusic", StringComparison.OrdinalIgnoreCase))
-                            CurrentSource = "via Musique";
-                        else if (!string.IsNullOrWhiteSpace(appId))
                         {
-                            var parts = appId.Split(new char[] { '\\', '/', '!' }, StringSplitOptions.RemoveEmptyEntries);
-                            string lastName = parts[^1];
-                            if (lastName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                                lastName = lastName[..^4];
-                            CurrentSource = $"via {lastName}";
+                            spotifySession = s;
+                            break;
+                        }
+                    }
+                }
+
+                // Vérification supplémentaire sur la session courante si elle provient de Spotify
+                if (spotifySession == null)
+                {
+                    var cur = manager.GetCurrentSession();
+                    if (cur != null && (cur.SourceAppUserModelId ?? "").Contains("Spotify", StringComparison.OrdinalIgnoreCase))
+                    {
+                        spotifySession = cur;
+                    }
+                }
+
+                if (spotifySession != null)
+                {
+                    var playbackInfo = spotifySession.GetPlaybackInfo();
+                    IsPlaying = playbackInfo?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+
+                    var props = await spotifySession.TryGetMediaPropertiesAsync();
+                    if (props != null && !string.IsNullOrWhiteSpace(props.Title))
+                    {
+                        string newTitle = props.Title.Length > 20 ? props.Title.Substring(0, 18) + "..." : props.Title;
+                        string newArtist = string.IsNullOrWhiteSpace(props.Artist) ? "Spotify" : props.Artist;
+                        if (newArtist.Length > 20) newArtist = newArtist.Substring(0, 18) + "...";
+
+                        CurrentTitle = newTitle;
+                        CurrentArtist = newArtist;
+                        CurrentSource = "Spotify";
+                        HasMedia = true;
+
+                        if (props.Thumbnail != null)
+                        {
+                            try
+                            {
+                                using var stream = await props.Thumbnail.OpenReadAsync();
+                                using var netStream = stream.AsStreamForRead();
+                                using var rawImg = Image.FromStream(netStream);
+                                var oldImg = CurrentThumbnail;
+                                CurrentThumbnail = CreateRoundedImage(rawImg, 42, 42, 8);
+                                oldImg?.Dispose();
+                            }
+                            catch
+                            {
+                                var oldImg = CurrentThumbnail;
+                                CurrentThumbnail = null;
+                                oldImg?.Dispose();
+                            }
                         }
                         else
-                            CurrentSource = "via Média";
-                    }
-                    catch { CurrentSource = "via Média"; }
-
-                    if (props.Thumbnail != null)
-                    {
-                        try
-                        {
-                            using var stream = await props.Thumbnail.OpenReadAsync();
-                            using var netStream = stream.AsStreamForRead();
-                            using var rawImg = Image.FromStream(netStream);
-                            var oldImg = CurrentThumbnail;
-                            CurrentThumbnail = CreateRoundedImage(rawImg, 42, 42, 8);
-                            oldImg?.Dispose();
-                        }
-                        catch
                         {
                             var oldImg = CurrentThumbnail;
                             CurrentThumbnail = null;
                             oldImg?.Dispose();
                         }
-                    }
-                    else
-                    {
-                        var oldImg = CurrentThumbnail;
-                        CurrentThumbnail = null;
-                        oldImg?.Dispose();
-                    }
 
-                    OnTrackChanged?.Invoke();
-                    return;
+                        OnTrackChanged?.Invoke();
+                        return;
+                    }
                 }
+            }
+
+            // Détection de secours directe via le titre de fenêtre du processus Spotify
+            var procs = Process.GetProcessesByName("Spotify");
+            foreach (var p in procs)
+            {
+                try
+                {
+                    string winTitle = p.MainWindowTitle;
+                    if (!string.IsNullOrWhiteSpace(winTitle) &&
+                        !winTitle.Equals("Spotify", StringComparison.OrdinalIgnoreCase) &&
+                        !winTitle.StartsWith("Spotify ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int dash = winTitle.IndexOf(" - ");
+                        if (dash > 0)
+                        {
+                            CurrentArtist = winTitle.Substring(0, dash).Trim();
+                            CurrentTitle = winTitle.Substring(dash + 3).Trim();
+                        }
+                        else
+                        {
+                            CurrentTitle = winTitle.Trim();
+                            CurrentArtist = "Spotify";
+                        }
+                        if (CurrentTitle.Length > 20) CurrentTitle = CurrentTitle.Substring(0, 18) + "...";
+                        if (CurrentArtist.Length > 20) CurrentArtist = CurrentArtist.Substring(0, 18) + "...";
+
+                        CurrentSource = "Spotify";
+                        HasMedia = true;
+                        IsPlaying = true;
+                        OnTrackChanged?.Invoke();
+                        return;
+                    }
+                }
+                catch { }
             }
         }
         catch { }
 
-        if (HasMedia || CurrentTitle != "Aucun son")
+        // Si Spotify ne joue aucun titre : afficher "Aucune lecture" (ne jamais afficher Chrome/Edge/Firefox)
+        if (HasMedia || CurrentTitle != "Aucune lecture")
         {
             HasMedia = false;
             IsPlaying = false;
-            CurrentTitle = "Aucun son";
-            CurrentArtist = "En attente de Spotify/Média";
-            CurrentSource = "via Média";
+            CurrentTitle = "Aucune lecture";
+            CurrentArtist = "Spotify";
+            CurrentSource = "Spotify";
             var oldImg = CurrentThumbnail;
             CurrentThumbnail = null;
             oldImg?.Dispose();
@@ -120,11 +163,17 @@ public class AudioSessionTracker
         try
         {
             var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-            var session = manager?.GetCurrentSession();
-            if (session != null)
+            if (manager != null)
             {
-                await session.TryTogglePlayPauseAsync();
-                await UpdateAsync();
+                foreach (var s in manager.GetSessions())
+                {
+                    if ((s.SourceAppUserModelId ?? "").Contains("Spotify", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await s.TryTogglePlayPauseAsync();
+                        await UpdateAsync();
+                        return;
+                    }
+                }
             }
         }
         catch { }
@@ -135,11 +184,17 @@ public class AudioSessionTracker
         try
         {
             var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-            var session = manager?.GetCurrentSession();
-            if (session != null)
+            if (manager != null)
             {
-                await session.TrySkipNextAsync();
-                await UpdateAsync();
+                foreach (var s in manager.GetSessions())
+                {
+                    if ((s.SourceAppUserModelId ?? "").Contains("Spotify", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await s.TrySkipNextAsync();
+                        await UpdateAsync();
+                        return;
+                    }
+                }
             }
         }
         catch { }
@@ -150,11 +205,17 @@ public class AudioSessionTracker
         try
         {
             var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-            var session = manager?.GetCurrentSession();
-            if (session != null)
+            if (manager != null)
             {
-                await session.TrySkipPreviousAsync();
-                await UpdateAsync();
+                foreach (var s in manager.GetSessions())
+                {
+                    if ((s.SourceAppUserModelId ?? "").Contains("Spotify", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await s.TrySkipPreviousAsync();
+                        await UpdateAsync();
+                        return;
+                    }
+                }
             }
         }
         catch { }

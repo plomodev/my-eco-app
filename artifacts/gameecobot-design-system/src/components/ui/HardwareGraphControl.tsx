@@ -37,19 +37,42 @@ const CHART = {
   height: 183,
 };
 
-function makeLinePath(values: number[]) {
+function makeCurvedPath(values: number[]) {
+  if (values.length === 0) return null;
   const points = values.map((value, index) => {
     const x = CHART.left + (CHART.width * index) / Math.max(values.length - 1, 1);
     const y = CHART.bottom - (value / 100) * CHART.height;
     return { x, y };
   });
 
-  const line = points
-    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
-    .join(' ');
+  if (points.length === 1) {
+    const p = points[0];
+    return {
+      line: `M ${p.x} ${p.y}`,
+      area: `M ${p.x} ${p.y} L ${p.x} ${CHART.bottom} Z`,
+    };
+  }
+
+  let line = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  const tension = 0.35;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+
+    const cp1x = p1.x + (p2.x - p0.x) * tension;
+    const cp1y = p1.y + (p2.y - p0.y) * tension;
+    const cp2x = p2.x - (p3.x - p1.x) * tension;
+    const cp2y = p2.y - (p3.y - p1.y) * tension;
+
+    line += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+
   const first = points[0];
   const last = points[points.length - 1];
-  const area = `${line} L ${last.x} ${CHART.bottom} L ${first.x} ${CHART.bottom} Z`;
+  const area = `${line} L ${last.x.toFixed(1)} ${CHART.bottom} L ${first.x.toFixed(1)} ${CHART.bottom} Z`;
 
   return { line, area };
 }
@@ -67,7 +90,7 @@ export function HardwareGraphControl({
   const selected = METRICS.find((item) => item.id === activeMetric) ?? METRICS[0];
   const samples = DEMO_SAMPLES[activeMetric];
   const currentValue = samples.length > 0 ? samples[samples.length - 1] : null;
-  const path = samples.length > 0 ? makeLinePath(samples) : null;
+  const path = samples.length > 0 ? makeCurvedPath(samples) : null;
 
   useEffect(() => {
     setAnimationProgress(0);
